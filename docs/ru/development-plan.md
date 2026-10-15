@@ -1,4 +1,4 @@
-# Nutanix node driver: план модернизации v10
+# Nutanix node driver: план модернизации v11
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
@@ -283,3 +283,30 @@ RED name-first/UUID профиль выявил UUID-first reorder. Критич
 inventory/endpoints, reordering management NIC и IPv4/IPv6 parsing.
 Testcontainers queues fixture использует name-first/UUID порядок и проверяет
 subnet UUID каждой NIC; остальные boundary scenarios сохраняются.
+
+
+## Reconcile: первая защитная часть v11
+
+`um-docs-nrsu.4.8.1`, in_progress: Create с известным VMId отклоняется до API.
+Remove проверяет UUID и exact VM metadata перед DELETE. Подтверждённый GET404
+возвращает успех без DELETE; 403 и несовпадающий VM UUID запрещают mutation.
+После task success требуется observed GET404. Delete404 либо terminal task
+failure сами по себе не означают отсутствие: выполняется readback. Нет blind
+retry mutation или поиска VM по имени; известный VMId сохраняется.
+
+Это не полный crash/lost-response recovery. Pinned Rancher Machine
+`libmachine/libmachine.go:117–161` сохраняет host до Create и после success;
+после ошибки отдельное сохранение предусмотрено только для vmwarevsphere.
+Nutanix VMId, изменённый в failed RPC Create, не получает этим путём гарантии
+постоянного хранения. `rpc/server_driver.go:107–115,133–142`: GetConfigRaw —
+отдельный marshal, а Create возвращает ошибку. Context7 `/rancher/rancher` не
+содержит ответа; вывод основан на точном dependency source407bfdc12e6fdfd19c9d76d565d552ea5b39f363.
+
+Pinned v3 Swagger: public POST/GET `/idempotence_identifiers` выделяет UUID4
+по client_identifier; произвольный UUID по умолчанию не принимается в Create.
+`/idempotence_identifiers/salted` помечен x-internal и предупреждает о UUID5
+коллизиях между environments; v4 NTNX-Request-ID не переносится в v3.
+Следующая часть: allocator в SDK, сохранение client identifier до mutation,
+защищённый durable journal и его binding к endpoint/host/intent, recovery после
+restart и отдельная executable RPC/TC проверка. Задача не закрывается этими
+локальными guards; новых RPC/config fields и журнала пока нет.

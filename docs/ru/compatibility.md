@@ -143,3 +143,11 @@ IP берётся с единственной NIC первой заявленн�
 в ответе не задаёт identity; IPv4 имеет приоритет при выборе допустимых адресов.
 Это совместимость формата RPC/config, а не обещание принятия неоднозначного
 старого профиля или end-to-end IPv6 support.
+
+
+Create с известным VMId требует reconcile и не подаёт новый POST. Remove
+проверяет UUID и exact VM metadata, не отправляет DELETE при observed GET404
+и требует отсутствия VM после successful task. HTTP403, чужой UUID либо
+неподтверждённое отсутствие не дают success. Эти guards не заменяют durable
+journal: закреплённый Machine consumer не сохраняет Nutanix state после
+failed Create; полноценный restart/lost-response recovery остаётся4.8.1.

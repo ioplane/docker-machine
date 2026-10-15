@@ -40,6 +40,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Create refuses resubmission while a VM identity is known. Remove validates that identity, observes the exact VM before deletion, returns success for confirmed absence without a DELETE, and requires observed absence after a successful delete task. HTTP 404 and terminal task errors are reconciled through VM readback; no mutation is retried. Durable unknown-outcome recovery still requires allocator and persistence integration.
+
 - NIC payloads preserve the declared network order; named subnet lookups require exactly one candidate. Duplicate subnet identities, ambiguous VLAN/VPC names and malformed inventories are rejected without a partial profile. Management IP selection follows the first declared subnet UUID rather than the response NIC position, validates endpoints and uses stable IPv4-first address ordering.
 
 - The isolated Testcontainers module uses the same immutable SDK revision as the driver; integration module validation rejects divergent replacements before compiling fixtures. Earlier boundary runs used its older SDK pin.
