@@ -2,8 +2,10 @@ package integration_test
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -429,17 +431,15 @@ func stopConsumerCLI(t *testing.T, cmd *exec.Cmd, output *bytes.Buffer) {
 		t.Errorf("no plugin RPC address recorded: %s", output.String())
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureHTTPTimeout)
+	defer cancel()
+
+	dialer := net.Dialer{Timeout: time.Second}
+
 	for _, address := range addresses {
-		dialer := net.Dialer{Timeout: time.Second}
-
-		conn, dialErr := dialer.DialContext(t.Context(), "tcp", address[1])
-		if dialErr == nil {
-			closeErr := conn.Close()
-			if closeErr != nil {
-				t.Error(closeErr)
-			}
-
-			t.Errorf("plugin listener survived process-group kill: %s", address[1])
+		probeErr := waitForPluginListener(ctx, address[1], dialer.DialContext)
+		if probeErr != nil {
+			t.Errorf("plugin listener did not close after process-group kill: %s: %v", address[1], probeErr)
 		}
 	}
 }
@@ -522,4 +522,193 @@ func TestSecretStoreCheckpointWire(t *testing.T) {
 	if checkpointErr != nil {
 		t.Fatal(checkpointErr)
 	}
+}
+
+func waitForPluginListener(ctx context.Context, address string,
+	dial func(context.Context, string, string) (net.Conn, error),
+) error {
+	ticker := time.NewTicker(workerPoll)
+	defer ticker.Stop()
+
+	for {
+		err := ctx.Err()
+		if err != nil {
+			return fmt.Errorf("wait for plugin listener closure: %w", err)
+		}
+
+		connection, dialErr := dial(ctx, "tcp", address)
+		if dialErr == nil {
+			closeErr := connection.Close()
+			if closeErr != nil {
+				return fmt.Errorf("close plugin probe: %w", closeErr)
+			}
+		}
+
+		err = ctx.Err()
+		if err != nil {
+			return fmt.Errorf("wait for plugin listener closure: %w", err)
+		}
+
+		if errors.Is(dialErr, syscall.ECONNREFUSED) {
+			return nil
+		}
+
+		if dialErr != nil {
+			return fmt.Errorf("probe plugin listener: %w", dialErr)
+		}
+
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return fmt.Errorf("wait for plugin listener closure: %w", ctx.Err())
+		}
+	}
+}
+
+func TestPluginListenerWait(t *testing.T) {
+	t.Parallel()
+
+	for _, expected := range []error{nil, context.Canceled} {
+		name := "asynchronous exit"
+		if expected != nil {
+			name = "live listener cancellation"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			runPluginListenerWait(t, expected)
+		})
+	}
+
+	t.Run("unrelated probe error", func(t *testing.T) {
+		t.Parallel()
+
+		err := waitForPluginListener(t.Context(), "127.0.0.1:0",
+			func(context.Context, string, string) (net.Conn, error) { return nil, errConsumerCheckpoint })
+		if !errors.Is(err, errConsumerCheckpoint) {
+			t.Fatalf("unrelated dial error was hidden: %v", err)
+		}
+	})
+}
+
+func runPluginListenerWait(t *testing.T, expected error) {
+	t.Helper()
+	command, address := startPluginListener(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), fixtureHTTPTimeout)
+	defer cancel()
+
+	observed, release := make(chan struct{}), make(chan struct{})
+	result := make(chan error, 1)
+
+	var first sync.Once
+
+	dialer := net.Dialer{Timeout: time.Second}
+
+	probe := func(probeContext context.Context, network, endpoint string) (net.Conn, error) {
+		connection, err := dialer.DialContext(probeContext, network, endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("fixture plugin probe: %w", err)
+		}
+
+		first.Do(func() {
+			close(observed)
+
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		})
+
+		return connection, nil
+	}
+	go func() { result <- waitForPluginListener(ctx, address.String(), probe) }()
+
+	select {
+	case <-observed:
+	case <-ctx.Done():
+		t.Fatal("actual plugin listener was not probed")
+	}
+
+	if expected != nil {
+		cancel()
+	} else {
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = command.Wait()
+		if err == nil {
+			t.Fatal("SIGKILL plugin exited successfully")
+		}
+	}
+
+	close(release)
+
+	err := <-result
+	if !errors.Is(err, expected) {
+		t.Fatalf("listener closure result: %v, want %v", err, expected)
+	}
+}
+
+func startPluginListener(t *testing.T) (*exec.Cmd, *net.TCPAddr) {
+	t.Helper()
+
+	binary, err := filepath.Abs("../../build/docker-machine-driver-nutanix")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), fixtureHTTPTimeout)
+	t.Cleanup(cancel)
+	//nolint:gosec // Execute only the actual plugin built by the declared integration build target.
+	command := exec.CommandContext(ctx, binary)
+
+	command.Env = append(os.Environ(), "MACHINE_PLUGIN_TOKEN=42")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.WaitDelay = fixtureHTTPTimeout
+
+	output, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = command.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			killErr := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			if killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+				t.Error(killErr)
+			}
+
+			waitErr := command.Wait()
+			if waitErr == nil {
+				t.Error("killed fixture plugin exited successfully")
+			}
+		}
+	})
+
+	group, err := syscall.Getpgid(command.Process.Pid)
+	if err != nil || group != command.Process.Pid {
+		t.Fatalf("fixture plugin PID=%d PGID=%d: %v", command.Process.Pid, group, err)
+	}
+
+	scanner := bufio.NewScanner(output)
+	if !scanner.Scan() {
+		t.Fatalf("actual plugin did not publish its listener: %v", scanner.Err())
+	}
+
+	t.Logf("test-owned plugin PID=%d PGID=%d", command.Process.Pid, group)
+
+	address, err := net.ResolveTCPAddr("tcp", scanner.Text())
+	if err != nil || !address.IP.IsLoopback() {
+		t.Fatalf("plugin did not publish a loopback listener: %v", err)
+	}
+
+	return command, address
 }
