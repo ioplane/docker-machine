@@ -1,4 +1,4 @@
-# Nutanix node driver: план модернизации v7
+# Nutanix node driver: план модернизации v8
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
@@ -192,3 +192,27 @@ strict lint, RPC и rootless Testcontainers выполняются на теку
 Constructor context, v3/v4 concurrent cache, общий deadline и operation reconcile
 остаются открыты; um-docs-nrsu.4.8.7 не закрывается по этому подэтапу. Нет
 merge/release/Rancher registration или live provision/performance acceptance.
+
+
+## Context/cache SDK pin: этап v8
+
+Driver закреплён на SDK `70ca9c60ff066dfa3ee00977d0f4c27998874245`, module
+`v0.8.3-0.20261015125745-70ca9c60ff06`, origin проверен через Go metadata/GH API.
+SDK добавляет context-aware v3/Konnector constructors и v3/v4 cache entrypoints;
+старые entrypoints сохраняют Background. Кэш объединяет создание на key, не
+держит mutex во время I/O и сохраняет RLock для cache hit. Неуспешная replacement
+сохраняет прежнюю запись; Delete запрещает позднюю публикацию старого constructor.
+Credentials/TLS/trust входят в hash; functional options первых успешных publications
+действуют до endpoint change/Delete. Только SDK-owned v3 idle transports закрываются
+при retirement; caller и generated v4 transport ownership не меняется.
+
+Критичные SDK regressions выполняются с race: 8 callers/1 constructor для v3/v4,
+constructor auth cancellation, waiter cancellation, rotation/failure/Delete и
+options ownership. TLS fixture v3 измеряет 1 auth и 1 TLS connection для 8 callers.
+V4 option errors сохраняют cause; новых dependencies/frameworks нет.
+
+Driver Go/RPC/config/VM queue payload и auth defaults в этом pin batch не меняются.
+Новые constructor entrypoints ещё не задают общий deadline драйвера: это следующий
+um-docs-nrsu.4.8.2 с явным threading operation context. Обязательные make check,
+strict lint/RPC и rootless Testcontainers проверяют текущий consumer; full SDK
+strict quality/Sonar и merge/release/live acceptance остаются отдельными gates.
