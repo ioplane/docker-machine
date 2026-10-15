@@ -434,12 +434,11 @@ func (d *NutanixDriver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 		return err
 	}
 
+	d.Timeout = opts.Int("nutanix-timeout")
 	if d.Timeout < defaultTimeout {
 		log.Warnf("nutanix-timeout is too low, setting to 300 seconds")
 
 		d.Timeout = defaultTimeout
-	} else {
-		d.Timeout = opts.Int("nutanix-timeout")
 	}
 
 	d.GPUs = opts.StringSlice("nutanix-vm-gpu")

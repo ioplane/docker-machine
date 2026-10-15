@@ -128,3 +128,56 @@ func TestQueueConfiguration(t *testing.T) {
 		})
 	}
 }
+
+type timeoutOptions struct {
+	queueOptions
+
+	timeout int
+}
+
+func (o timeoutOptions) Int(key string) int {
+	if key == "nutanix-timeout" {
+		return o.timeout
+	}
+
+	return o.queueOptions.Int(key)
+}
+
+func TestTimeoutUsesRequestedValue(t *testing.T) {
+	t.Parallel()
+
+	const (
+		customTimeout  = 600
+		minimumTimeout = 300
+	)
+
+	for _, testCase := range []struct {
+		name      string
+		previous  int
+		requested int
+		want      int
+	}{
+		{name: "fresh custom timeout", requested: customTimeout, want: customTimeout},
+		{name: "configured default", previous: customTimeout, requested: minimumTimeout, want: minimumTimeout},
+		{name: "zero after prior configuration", previous: customTimeout, want: minimumTimeout},
+		{name: "negative after prior configuration", previous: customTimeout, requested: -1, want: minimumTimeout},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			nodeDriver := driver.NewDriver("test", "")
+			nodeDriver.Timeout = testCase.previous
+
+			err := nodeDriver.SetConfigFromFlags(timeoutOptions{
+				sockets: 2, cores: 2, timeout: testCase.requested,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if nodeDriver.Timeout != testCase.want {
+				t.Fatalf("timeout = %d, want %d", nodeDriver.Timeout, testCase.want)
+			}
+		})
+	}
+}

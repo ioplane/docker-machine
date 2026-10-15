@@ -37,14 +37,17 @@ RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после норм�
 ## Prism SDK и JSON API
 
 База Prism SDK — стабильная версия `v0.8.2`. В `go.mod` закреплён fork
-`github.com/ioplane/prism-go-client v0.8.3-0.20261015010339-eefdc324a6c3`,
-commit `eefdc324a6c3989ef60f54cc8a68fdce947d7366`,
+`github.com/ioplane/prism-go-client v0.8.3-0.20261015093137-f51cc86ec69f`,
+commit `f51cc86ec69faa10a8a79e39ce778b9d1af21b26`,
 [PR #1](https://github.com/ioplane/prism-go-client/pull/1).
 Это исправление поверх `v0.8.2`, а не опубликованный upstream release `v0.8.3`.
 Причина: upstream SDK изменяет общий `http.DefaultTransport` при создании клиента.
 Параллельный regression-тест воспроизводит гонку и смешивание TLS/proxy-настроек.
 Fork клонирует transport для каждого клиента и возвращает ошибку при неподдерживаемом
-типе default transport. Тестовая параллельность сохранена.
+типе default transport. Тестовая параллельность сохранена. Дополнительно SDK filter возвращает ошибку
+для nil filter и неверной формы entities вместо panic; корректные ответы
+и импортируемые сигнатуры сохраняются. Ограничение размера HTTP body
+и безопасный текст API errors остаются отдельной открытой задачей.
 
 Используемый запрос остаётся
 `POST /api/nutanix/v3/vms`, поле — `spec.resources.nic_list[].num_queues`.
