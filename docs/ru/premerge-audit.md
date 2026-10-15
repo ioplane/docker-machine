@@ -38,8 +38,8 @@ worker pools, глобальный cache, blind retry Create или универ
 
 ## Go и границы совместимости
 
-Compiler1.27.2 фиксируется OCI digest и GOTOOLCHAIN=local. SDK language floor1.24
-сохранён; main drivergo1.27 определяет stdlib compatibility defaults. Shared Go
+Compiler1.27.2 фиксируется OCI digest и GOTOOLCHAIN=local. Final SDK language floor повышен до1.27 после standalone dependency audit;
+потребителям форка требуется Go1.27+. Main drivergo1.27 определяет stdlib compatibility defaults. Shared Go
 plugin ABI неприменима к отдельному net/rpc процессу. Сохраняются API1/Config3,
 legacy JSON и nullable queues. Go1.27 JSON engine не требует перехода на v2 imports.
 Removed legacy timer/TLS GODEBUG switches не являются rollback.

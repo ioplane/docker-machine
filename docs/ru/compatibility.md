@@ -37,8 +37,8 @@ RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после норм�
 ## Prism SDK и JSON API
 
 База Prism SDK — стабильная версия `v0.8.2`. В `go.mod` закреплён fork
-`github.com/ioplane/prism-go-client v0.8.3-0.20261015005157-5645bd8b8b65`,
-commit `5645bd8b8b65dcb418b933e4ef764599e95af095`,
+`github.com/ioplane/prism-go-client v0.8.3-0.20261015010339-eefdc324a6c3`,
+commit `eefdc324a6c3989ef60f54cc8a68fdce947d7366`,
 [PR #1](https://github.com/ioplane/prism-go-client/pull/1).
 Это исправление поверх `v0.8.2`, а не опубликованный upstream release `v0.8.3`.
 Причина: upstream SDK изменяет общий `http.DefaultTransport` при создании клиента.
