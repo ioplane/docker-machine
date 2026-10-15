@@ -91,3 +91,27 @@ HTTP fixture останавливает запрос на create и не ими�
 Эти проверки не подтверждают live registration, DynamicSchema cache,
 Terraform expand/flatten, template hash, поддержку версии AHV, throughput или p99.
 Такая интеграция проходит отдельную приёмку по плану и разрешённому canary.
+
+## Входные данные Create: этап v5
+
+CPU sockets и cores положительны, их произведение помещается в int64 независимо
+от queue flag; RAM MiB положительна. Необязательные image/disk GiB равны нулю
+для прежнего omission либо положительны без переполнения целевого int64 поля
+MiB/bytes. Это границы представления, не аппаратные максимумы Nutanix.
+Проверка выполняется при SetConfigFromFlags и повторно перед Create для
+восстановленного RPC/JSON state. Имена, типы и JSON tags публичных полей сохранены.
+
+Непустой cloud-init начинается строкой `#cloud-config` и содержит один YAML
+mapping; `users` — только прямой sequence. Вложенные `users` сохраняются.
+Существующий root user получает bootstrap key без дубликата записи или ключа;
+его остальные поля, sudo и ключи сохраняются. При отсутствии sudo добавляется
+прежнее правило bootstrap. Строковый root преобразуется в mapping; default и
+остальные пользователи сохраняются. Дубли root, неоднозначные mapping keys,
+alias/merge в изменяемых узлах и неверная форма root SSH keys отклоняются.
+Пустой userdata сохраняет прежний default payload. Декодирование и SSH key
+подготовка выполняются до Prism calls; parser errors не раскрывают raw userdata.
+Это проверка bootstrap boundary, не полная cloud-init schema или guest boot.
+
+Переход: заменить alias/merge для root/users/SSH keys явными узлами и устранить
+дубли/неверные числовые значения. Ранее такие inputs могли дойти до API;
+теперь возвращается ошибка до запроса. SDK pin и queue payload не меняются.
