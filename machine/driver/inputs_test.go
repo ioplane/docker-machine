@@ -123,6 +123,8 @@ func assertMergedRoot(t *testing.T, data []byte, input string) {
 
 	roots := 0
 
+	var root map[string]any
+
 	for _, entry := range users {
 		user, isMap := entry.(map[string]any)
 		if !isMap || user["name"] != "root" {
@@ -130,21 +132,22 @@ func assertMergedRoot(t *testing.T, data []byte, input string) {
 		}
 
 		roots++
-
-		keys, isKeys := user["ssh_authorized_keys"].([]any)
-		if !isKeys || !slices.Contains(keys, any(fixturePublicKey)) {
-			t.Fatalf("bootstrap key missing: %#v", user)
-		}
-
-		if strings.Contains(input, "existing-key") &&
-			(!slices.Equal(keys, []any{"existing-key", fixturePublicKey}) ||
-				user["shell"] != "/bin/bash" || user["sudo"] != "custom-rule") {
-			t.Fatalf("existing root settings changed: %#v", user)
-		}
+		root = user
 	}
 
 	if roots != 1 {
 		t.Fatalf("root entries = %d, want one", roots)
+	}
+
+	keys, isKeys := root["ssh_authorized_keys"].([]any)
+	if !isKeys || !slices.Contains(keys, any(fixturePublicKey)) {
+		t.Fatalf("bootstrap key missing: %#v", root)
+	}
+
+	if strings.Contains(input, "existing-key") &&
+		(!slices.Equal(keys, []any{"existing-key", fixturePublicKey}) ||
+			root["shell"] != "/bin/bash" || root["sudo"] != "custom-rule") {
+		t.Fatalf("existing root settings changed: %#v", root)
 	}
 
 	if strings.Contains(input, "nested-user") && got["nested"] == nil {
