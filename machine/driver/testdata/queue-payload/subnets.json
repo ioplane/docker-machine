@@ -1,0 +1,1 @@
+{"metadata":{"offset":0,"total_matches":2,"length":2},"entities":[{"metadata":{"uuid":"vlan-id"},"status":{"name":"vlan"},"spec":{"name":"vlan","resources":{"subnet_type":"VLAN"},"cluster_reference":{"uuid":"cluster-id"}}},{"metadata":{"uuid":"overlay-id"},"status":{"name":"overlay"},"spec":{"name":"overlay","resources":{"subnet_type":"OVERLAY"}}}]}

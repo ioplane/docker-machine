@@ -1,5 +1,10 @@
 # Nutanix Rancher Node Driver
 
+This is the `ioplane/docker-machine` fork of the Nutanix Rancher node driver.
+See the [development plan](docs/ru/development-plan.md) and
+[compatibility contract](docs/ru/compatibility.md) before selecting a fork build.
+Upstream installation URLs below describe the upstream release, not this fork.
+
 This repository contains the Rancher Node Driver for Nutanix. Nutanix Node driver are used to provision hosts on Nutanix Enterprise Cloud, which Rancher uses to launch and manage Kubernetes clusters.
 
 
@@ -84,6 +89,7 @@ If you want to use Nutanix Node Driver, you need add it in order to start using 
 | `nutanix-vm-mem`             | The amount of RAM of the newly created VM (MB)                                                   | no       | 2 GB                                      |
 | `nutanix-vm-cpus`            | The number of cpus in the newly created VM (core)                                                | no       | 2                                         |
 | `nutanix-vm-cores`           | The number of cores per vCPU                                                                     | no       | 1                                         |
+| `nutanix-vm-nic-queues`      | Positive decimal queues per NIC, at most CPUs × cores; empty leaves `num_queues` unset            | no       | empty                                     |
 | `nutanix-vm-network`         | The network(s) to which the VM is attached to ( name or UUID )                                   | yes      |                                           |
 | `nutanix-vm-image`           | The name of the Disk Image template we use for the newly created VM (must support cloud-init)    | yes      |                                           |
 | `nutanix-vm-image-size`      | The new size of the Image we use as a template (in GiB)                                          | no       |                                           |
@@ -126,8 +132,34 @@ The Rancher Node Driver supports attaching GPU devices to VMs. To use GPUs:
 
 ### Build Instructions
 
-build linux/amd64 binary => `make` 
-build local binary => `make local`
+Development tools run in the project's pinned Podman containers:
+
+```sh
+make dev-build lint-build
+make check
+```
+
+`make build` writes the static Linux binary to `build/docker-machine-driver-nutanix`.
+`make check` runs tests, race detection, vet, golangci-lint v2, formatter checks,
+govulncheck and the build. It requires no Prism or Rancher credentials.
+The compatibility tests use an isolated subprocess and local HTTP fixtures.
+`make integration-build integration` additionally exercises the real SDK through
+one disposable Prism TLS container with Testcontainers v0.44.0. It requires an
+already running **rootless** Podman service and `PODMAN_SOCKET` pointing at its
+Unix socket. The test runner mounts this unprivileged socket only; rootful host
+sockets are rejected. On SELinux hosts the test runner may require a per-container
+label policy; host container configuration is not changed by these targets.
+`make integration-mod-check integration-quality` verifies the separate integration
+module, including all configured linters, formatting and test-aware govulncheck.
+Ryuk is disabled for the isolated suite; `CleanupContainer` owns normal cleanup.
+A killed test process can leave its fixture behind; use a disposable CI runner.
+
+The [pre-merge audit](docs/ru/premerge-audit.md) records remaining lifecycle risks.
+A passing mock suite is not a production acceptance result.
+
+The queue flag applies to every NIC created by this driver. It does not change
+existing VM hardware or guest channel settings. Rancher2 provider/schema/module
+support and an approved isolated canary remain separate integration work.
 
 ## History
 
@@ -142,3 +174,9 @@ This code is developed in the open with input from the community through issues 
 Copyright 2022-2023 Nutanix, Inc.
 
 The project is released under Mozilla Public License Version 2.0.
+
+## ioplane fork development
+
+Contribution and release rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
+The [modernization plan](docs/ru/development-plan.md) defines the sequence and
+acceptance criteria; task state is maintained in the local um-docs Beads workspace.

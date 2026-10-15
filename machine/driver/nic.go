@@ -1,0 +1,176 @@
+package driver
+
+import (
+	"context"
+	"fmt"
+	"net/netip"
+	"net/url"
+	"strings"
+
+	prismv3 "github.com/nutanix-cloud-native/prism-go-client/v3"
+	"github.com/nutanix/docker-machine/utils"
+)
+
+func (d *NutanixDriver) addNICs(
+	ctx context.Context, conn *prismv3.Client, clusterUUID string, res *prismv3.VMResources,
+) error {
+	queues, err := d.nicQueues()
+	if err != nil {
+		return err
+	}
+
+	if len(d.Subnet) == 0 {
+		return errEmptyNetwork
+	}
+
+	filters := make([]string, 0, len(d.Subnet))
+	for _, query := range d.Subnet {
+		query = strings.TrimSpace(query)
+		if query == "" {
+			return errEmptyNetwork
+		}
+
+		if !isUUID(query) {
+			encoded := &url.URL{Path: query}
+			filters = append(filters, nameFilterPrefix+encoded.String())
+		}
+	}
+
+	var subnets []*prismv3.SubnetIntentResponse
+
+	if len(filters) != 0 {
+		response, listErr := conn.V3.ListAllSubnet(ctx, strings.Join(filters, ","), getEmptyClientSideFilter())
+		if listErr != nil {
+			return fmt.Errorf("list networks: %w", listErr)
+		}
+
+		if response == nil {
+			return fmt.Errorf("%w: missing network inventory", errDriverConfiguration)
+		}
+
+		subnets = response.Entities
+	}
+
+	resolved := make([]*prismv3.VMNic, 0, len(d.Subnet))
+	seen := make(map[string]struct{}, len(d.Subnet))
+
+	for _, query := range d.Subnet {
+		subnetUUID, resolveErr := resolveSubnet(strings.TrimSpace(query), clusterUUID, subnets)
+		if resolveErr != nil {
+			return resolveErr
+		}
+
+		if _, duplicate := seen[subnetUUID]; duplicate {
+			return fmt.Errorf("%w: duplicate network identity", errDriverConfiguration)
+		}
+
+		seen[subnetUUID] = struct{}{}
+		resolved = append(resolved, &prismv3.VMNic{
+			SubnetReference: utils.BuildReference(subnetUUID, "subnet"), NumQueues: queues,
+		})
+	}
+
+	res.NicList = resolved
+
+	return nil
+}
+
+func resolveSubnet(query, clusterUUID string, subnets []*prismv3.SubnetIntentResponse) (string, error) {
+	if isUUID(query) {
+		return strings.ToLower(query), nil
+	}
+
+	identity := ""
+
+	for _, subnet := range subnets {
+		if !matchesSubnet(subnet, query, clusterUUID) {
+			continue
+		}
+
+		if identity != "" {
+			return "", fmt.Errorf("%w: ambiguous network %s; specify its UUID", errDriverConfiguration, query)
+		}
+
+		identity = strings.ToLower(*subnet.Metadata.UUID)
+	}
+
+	if identity == "" {
+		return "", fmt.Errorf("%w: network %s not found in target cluster", errDriverConfiguration, query)
+	}
+
+	return identity, nil
+}
+
+func matchesSubnet(subnet *prismv3.SubnetIntentResponse, query, clusterUUID string) bool {
+	if subnet == nil || subnet.Metadata == nil || subnet.Metadata.UUID == nil || *subnet.Metadata.UUID == "" ||
+		subnet.Spec == nil || subnet.Spec.Name == nil || *subnet.Spec.Name != query ||
+		subnet.Spec.Resources == nil || subnet.Spec.Resources.SubnetType == nil {
+		return false
+	}
+
+	kind := *subnet.Spec.Resources.SubnetType
+	if kind == "OVERLAY" {
+		return true
+	}
+
+	reference := subnet.Spec.ClusterReference
+
+	return kind == "VLAN" && reference != nil && reference.UUID != nil && *reference.UUID == clusterUUID
+}
+
+func managementIP(nics []*prismv3.VMNicOutputStatus, subnetUUID string) (string, error) {
+	if subnetUUID == "" {
+		return "", fmt.Errorf("%w: missing management network identity", errDriverConfiguration)
+	}
+
+	var selected *prismv3.VMNicOutputStatus
+
+	for _, nic := range nics {
+		if nic == nil || nic.SubnetReference == nil || nic.SubnetReference.UUID == nil ||
+			!strings.EqualFold(*nic.SubnetReference.UUID, subnetUUID) {
+			continue
+		}
+
+		if selected != nil {
+			return "", fmt.Errorf("%w: ambiguous management NIC", errInvalidVM)
+		}
+
+		selected = nic
+	}
+
+	if selected == nil || selected.IsConnected != nil && !*selected.IsConnected {
+		return "", nil
+	}
+
+	return endpointIP(selected.IPEndpointList)
+}
+
+func endpointIP(endpoints []*prismv3.IPAddress) (string, error) {
+	var selected netip.Addr
+
+	for _, endpoint := range endpoints {
+		if endpoint == nil || endpoint.IP == nil || *endpoint.IP == "" {
+			continue
+		}
+
+		address, err := netip.ParseAddr(*endpoint.IP)
+		if err != nil {
+			return "", fmt.Errorf("%w: malformed management IP", errInvalidVM)
+		}
+
+		address = address.Unmap()
+		if !address.IsGlobalUnicast() || address.Zone() != "" {
+			continue
+		}
+
+		if !selected.IsValid() || address.Compare(selected) < 0 {
+			selected = address
+		}
+	}
+
+	if !selected.IsValid() {
+		return "", nil
+	}
+
+	return selected.String(), nil
+}

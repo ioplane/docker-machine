@@ -1,73 +1,90 @@
 name: Integration
-
 on:
   push:
   pull_request:
-
+    types: [opened, synchronize, reopened, edited]
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
-    name: Check
-    runs-on: ubuntu-latest
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [mod-check, test, race, vet, lint, fmt-check, vuln, build, integration-mod-check, integration-quality]
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: go.mod
-
-      - name: Lint Go Code
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          staticcheck ./...
-
-  vet:
-    name: Vet
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+          persist-credentials: false
+      - name: Verify container runtime
+        run: podman --version
+      - name: Build declared development image
+        run: make dev-build
+      - name: Build pinned lint image
+        if: matrix.check == 'lint' || matrix.check == 'fmt-check' || matrix.check == 'integration-quality'
+        run: make lint-build
+      - name: Run blocking check in Podman
+        run: make "${{ matrix.check }}"
+      - name: Upload driver
+        if: matrix.check == 'build'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          go-version-file: go.mod
-
-      - name: Vet Go code
-        run: go vet ./...
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-        
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Compile
-        run: go build -v -o build/docker-machine-driver-nutanix machine/main.go
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0
-        env:
-           TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db,public.ecr.aws/aquasecurity/trivy-db"
-        with:
-          scan-type: "fs"
-          ignore-unfixed: true
-          format: "table"
-          exit-code: "1"
-          vuln-type: "os,library"
-          severity: "CRITICAL,HIGH"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          # Artifact name
           name: docker-machine-driver-nutanix
-          # Directory containing files to upload
           path: build/docker-machine-driver-nutanix
+          if-no-files-found: error
+          retention-days: 7
+
+  testcontainers:
+    name: Testcontainers Prism boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build declared toolchain and disposable Prism fixture
+        run: make dev-build integration-build
+      - name: Run Testcontainers against rootless Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          export PODMAN_SOCKET="${RUNNER_TEMP}/prism-podman.sock"
+          podman system service --time=0 "unix://${PODMAN_SOCKET}" > "${RUNNER_TEMP}/prism-podman.log" 2>&1 &
+          service_pid=$!
+          trap 'kill "$service_pid"' EXIT
+          for attempt in {1..50}; do
+            if test -S "$PODMAN_SOCKET"; then break; fi
+            sleep 0.1
+          done
+          make integration
+
+  governance:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/')
+    name: Fork contribution governance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build declared development image
+        run: make dev-build
+      - name: Check new commit titles, PR title and changelog
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          COMMIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          COMMIT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export GOVERNANCE_TITLE="$PR_TITLE"
+          export GOVERNANCE_TITLES="$(git log --no-merges --format=%s "$COMMIT_BASE..$COMMIT_HEAD")"
+          test -n "$GOVERNANCE_TITLES"
+          make governance

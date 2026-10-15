@@ -1,0 +1,8 @@
+FROM scratch
+LABEL org.opencontainers.image.title="Disposable Prism API contract fixture" \
+      org.opencontainers.image.source="https://github.com/ioplane/docker-machine" \
+      org.opencontainers.image.licenses="MPL-2.0"
+COPY build/prism-fixture /prism-fixture
+COPY machine/driver/testdata/queue-payload/ /fixtures/
+EXPOSE 8443
+ENTRYPOINT ["/prism-fixture"]
