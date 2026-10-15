@@ -86,6 +86,7 @@ func TestCloudInitRootMerge(t *testing.T) {
 			t.Parallel()
 			fixture := newPayloadFixture(t, "")
 			nodeDriver := payloadDriver(t, fixture.server, fixtureQueues)
+
 			nodeDriver.CloudInit = "#cloud-config\n" + input
 			if input == "#cloud-config" {
 				nodeDriver.CloudInit = input
