@@ -12,7 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/nutanix/docker-machine/utils"
@@ -32,9 +31,6 @@ var (
 	errInvalidVM             = errors.New("nutanix response contains no valid VM UUID")
 	errInvalidTask           = errors.New("nutanix response contains no valid task UUID")
 	errCloudInitSyntax       = errors.New("cloud-init syntax error")
-	errCreateTimeout         = errors.New("timeout waiting for vm to create")
-	errIPTimeout             = errors.New("timeout waiting for vm to obtain an IP address")
-	errDeleteTimeout         = errors.New("timeout waiting to delete vm")
 	errEmptyUsername         = errors.New("nutanix-username cannot be empty")
 	errEmptyPassword         = errors.New("nutanix-password cannot be empty")
 	errEmptyEndpoint         = errors.New("nutanix-endpoint cannot be empty")
@@ -54,13 +50,14 @@ const (
 	connectionLogFormat   = "Connecting on: %s"
 	endpointFormat        = "%s:%s"
 	taskSucceeded         = "SUCCEEDED"
+	powerOn               = "ON"
+	powerOff              = "OFF"
 	taskPollSeconds       = 5
 	categoryPairLength    = 2
 	mibPerGiB             = 1024
 	bytesPerGiB           = 1 << 30
 	defaultTimeout        = 300
 	maxDescriptionLength  = 1000
-	powerPollAttempts     = 1200
 	decimalBase           = 10
 	defaultVMMem          = 2048
 	defaultVCPUs          = 2
@@ -114,74 +111,13 @@ func NewDriver(hostname, storePath string) *NutanixDriver {
 
 // Create a host using the driver's config.
 func (d *NutanixDriver) Create() error {
-	err := d.validateHardware()
-	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	customization, err := d.guestCustomization()
+	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
-	ctx := context.Background()
-
-	conn, err := d.connect()
-	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	// Prepare VM creation request
-	res := d.initialResources()
-	metadata := &prismv3.Metadata{Kind: new("vm")}
-	spec := &prismv3.VM{Name: new(d.GetMachineName()), Description: new(d.Description), Resources: res}
-
-	err = d.assignProject(ctx, conn, metadata)
-	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	cluster, err := d.findCluster(ctx, conn)
-	if err != nil {
-		return err
-	}
-
-	spec.ClusterReference = utils.BuildReference(*cluster.Metadata.UUID, "cluster")
-
-	err = d.addNICs(ctx, conn, *cluster.Metadata.UUID, res)
-	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	err = d.assignCategories(metadata)
-	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	err = d.addImage(ctx, conn, res)
-	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	d.addDisk(res)
-
-	err = d.addGPUs(ctx, conn, *cluster.Metadata.UUID, res)
-	if err != nil {
-		return err
-	}
-
-	res.GuestCustomization = customization
-
-	request := &prismv3.VMIntentInput{Metadata: metadata, Spec: spec}
-
-	resp, err := conn.V3.CreateVM(ctx, request)
-	if err != nil {
-		log.Errorf("Error creating vm: [%v]", err)
-
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	return d.finishCreate(ctx, conn, resp)
+	return d.createVM(ctx)
 }
 
 // DriverName returns the name of the driver.
@@ -344,9 +280,13 @@ func (d *NutanixDriver) GetURL() (string, error) {
 
 // GetState returns the state that the host is in (running, stopped, etc).
 func (d *NutanixDriver) GetState() (state.State, error) {
-	ctx := context.Background()
+	ctx, cancel, err := d.operationContext()
+	if err != nil {
+		return state.Error, err
+	}
+	defer cancel()
 
-	conn, err := d.connect()
+	conn, err := d.connect(ctx)
 	if err != nil {
 		return state.Error, fmt.Errorf("get VM state: %w", err)
 	}
@@ -356,10 +296,14 @@ func (d *NutanixDriver) GetState() (state.State, error) {
 		return state.Error, fmt.Errorf("get VM state: %w", err)
 	}
 
+	if resp == nil || resp.Status == nil || resp.Status.Resources == nil || resp.Status.Resources.PowerState == nil {
+		return state.Error, errInvalidVM
+	}
+
 	switch *resp.Status.Resources.PowerState {
-	case "ON":
+	case powerOn:
 		return state.Running, nil
-	case "OFF":
+	case powerOff:
 		return state.Stopped, nil
 	}
 
@@ -385,12 +329,18 @@ func (d *NutanixDriver) Remove() error {
 // Restart a host. This may just call Stop(); Start() if the provider does not
 // have any special restart behaviour.
 func (d *NutanixDriver) Restart() error {
-	err := d.Stop()
+	ctx, cancel, err := d.operationContext()
 	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
+		return err
+	}
+	defer cancel()
+
+	err = d.setPowerStateContext(ctx, powerOff)
+	if err != nil {
+		return err
 	}
 
-	return d.Start()
+	return d.setPowerStateContext(ctx, powerOn)
 }
 
 // SetConfigFromFlags configures the driver with the object that was returned
@@ -448,73 +398,103 @@ func (d *NutanixDriver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 }
 
 // Start a host.
-func (d *NutanixDriver) Start() error { return d.setPowerState("ON") }
+func (d *NutanixDriver) Start() error { return d.setPowerState(powerOn) }
 
 // Stop a host.
-func (d *NutanixDriver) Stop() error { return d.setPowerState("OFF") }
+func (d *NutanixDriver) Stop() error { return d.setPowerState(powerOff) }
 
-func (d *NutanixDriver) removeVM() error {
-	name := d.GetMachineName()
-	ctx := context.Background()
-
-	conn, err := d.connect()
+func (d *NutanixDriver) createVM(ctx context.Context) error {
+	err := d.validateHardware()
 	if err != nil {
-		return fmt.Errorf("error connecting to Nutanix: %w", err)
+		return fmt.Errorf(driverOperationFormat, err)
 	}
 
-	log.Infof("Deleting VM %s (%s)", name, d.VMId)
+	customization, err := d.guestCustomization()
+	if err != nil {
+		return err
+	}
+
+	conn, err := d.connect(ctx)
+	if err != nil {
+		return fmt.Errorf(driverOperationFormat, err)
+	}
+
+	// Prepare VM creation request
+	res := d.initialResources()
+	metadata := &prismv3.Metadata{Kind: new("vm")}
+	spec := &prismv3.VM{Name: new(d.GetMachineName()), Description: new(d.Description), Resources: res}
+
+	err = d.assignProject(ctx, conn, metadata)
+	if err != nil {
+		return fmt.Errorf(driverOperationFormat, err)
+	}
+
+	cluster, err := d.findCluster(ctx, conn)
+	if err != nil {
+		return err
+	}
+
+	spec.ClusterReference = utils.BuildReference(*cluster.Metadata.UUID, "cluster")
+
+	err = d.addNICs(ctx, conn, *cluster.Metadata.UUID, res)
+	if err != nil {
+		return fmt.Errorf(driverOperationFormat, err)
+	}
+
+	err = d.assignCategories(metadata)
+	if err != nil {
+		return fmt.Errorf(driverOperationFormat, err)
+	}
+
+	err = d.addImage(ctx, conn, res)
+	if err != nil {
+		return fmt.Errorf(driverOperationFormat, err)
+	}
+
+	d.addDisk(res)
+
+	err = d.addGPUs(ctx, conn, *cluster.Metadata.UUID, res)
+	if err != nil {
+		return err
+	}
+
+	res.GuestCustomization = customization
+
+	request := &prismv3.VMIntentInput{Metadata: metadata, Spec: spec}
+
+	resp, err := conn.V3.CreateVM(ctx, request)
+	if err != nil {
+		log.Errorf("Error creating vm: [%v]", err)
+
+		return fmt.Errorf(driverOperationFormat, err)
+	}
+
+	return d.finishCreate(ctx, conn, resp)
+}
+
+func (d *NutanixDriver) removeVM() error {
+	ctx, cancel, err := d.operationContext()
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	conn, err := d.connect(ctx)
+	if err != nil {
+		return err
+	}
 
 	resp, err := conn.V3.DeleteVM(ctx, d.VMId)
 	if err != nil {
-		return fmt.Errorf("error launching deleting VM %s: %w", name, err)
+		return fmt.Errorf("delete VM: %w", err)
 	}
 
-	taskUUID, taskErr := vmTaskUUID(resp)
-	if taskErr != nil {
-		return taskErr
+	taskUUID, err := vmTaskUUID(resp)
+	if err != nil {
+		return err
 	}
 
-	log.Infof("waiting to delete vm %s (%s): task %s", name, d.VMId, taskUUID)
-
-	// Wait end of the task
-waitTask:
-	for attempt := range d.Timeout / taskPollSeconds {
-		resp, err := conn.V3.GetTask(ctx, taskUUID)
-		if err != nil {
-			log.Errorf("Error getting task: [%v]", err)
-
-			return fmt.Errorf(driverOperationFormat, err)
-		}
-
-		switch *resp.Status {
-		case taskSucceeded:
-			log.Infof("VM %s deletion task succeeded", name)
-
-			break waitTask
-		case "FAILED":
-			errMsg := strings.ReplaceAll(*resp.ErrorDetail, "\n", " ")
-			if strings.Contains(errMsg, "ENTITY_NOT_FOUND") {
-				log.Infof("VM %s already deleted", name)
-
-				return nil
-			}
-
-			log.Errorf("Error deleting vm: %v", errMsg)
-
-			return fmt.Errorf("%w: %s", errTaskFailed, errMsg)
-		}
-
-		if attempt == (d.Timeout/taskPollSeconds)-1 {
-			log.Errorf("Timeout waiting to delete vm %s", name)
-
-			return errDeleteTimeout
-		}
-
-		log.Infof("VM %s deletion is in %s state", name, *resp.Status)
-		<-time.After(taskPollSeconds * time.Second)
-	}
-
-	return nil
+	return waitForTask(ctx, conn, taskUUID)
 }
 
 // nicQueues also validates persisted driver state before any API request.
@@ -547,13 +527,19 @@ func (d *NutanixDriver) nicQueues() (*int64, error) {
 }
 
 func (d *NutanixDriver) setPowerState(power string) error {
-	name := d.GetMachineName()
-
-	ctx := context.Background()
-
-	conn, err := d.connect()
+	ctx, cancel, err := d.operationContext()
 	if err != nil {
-		return fmt.Errorf(driverOperationFormat, err)
+		return err
+	}
+	defer cancel()
+
+	return d.setPowerStateContext(ctx, power)
+}
+
+func (d *NutanixDriver) setPowerStateContext(ctx context.Context, power string) error {
+	conn, err := d.connect(ctx)
+	if err != nil {
+		return err
 	}
 
 	vmResp, err := conn.V3.GetVM(ctx, d.VMId)
@@ -561,10 +547,11 @@ func (d *NutanixDriver) setPowerState(power string) error {
 		return fmt.Errorf(driverOperationFormat, err)
 	}
 
-	// Prepare VM update request
-	request := &prismv3.VMIntentInput{}
-	request.Spec = vmResp.Spec
-	request.Metadata = vmResp.Metadata
+	if vmResp == nil || vmResp.Spec == nil || vmResp.Spec.Resources == nil || vmResp.Metadata == nil {
+		return errInvalidVM
+	}
+
+	request := &prismv3.VMIntentInput{Spec: vmResp.Spec, Metadata: vmResp.Metadata}
 	request.Spec.Resources.PowerState = new(power)
 
 	resp, err := conn.V3.UpdateVM(ctx, d.VMId, request)
@@ -572,24 +559,29 @@ func (d *NutanixDriver) setPowerState(power string) error {
 		return fmt.Errorf(driverOperationFormat, err)
 	}
 
-	taskUUID, taskErr := vmTaskUUID(resp)
-	if taskErr != nil {
-		return taskErr
+	taskUUID, err := vmTaskUUID(resp)
+	if err != nil {
+		return err
 	}
 
-	// Wait for the VM to be deleted
-	for range powerPollAttempts {
-		resp, err := conn.V3.GetTask(ctx, taskUUID)
-		if err != nil || *resp.Status != taskSucceeded {
-			<-time.After(1 * time.Second)
+	err = waitForTask(ctx, conn, taskUUID)
+	if err != nil {
+		return err
+	}
 
-			continue
+	return poll(ctx, func() (bool, error) {
+		vmInfo, readErr := conn.V3.GetVM(ctx, d.VMId)
+		if readErr != nil {
+			return false, fmt.Errorf("verify VM power state: %w", readErr)
 		}
 
-		return nil
-	}
+		if vmInfo == nil || vmInfo.Status == nil || vmInfo.Status.Resources == nil ||
+			vmInfo.Status.Resources.PowerState == nil {
+			return false, errInvalidVM
+		}
 
-	return fmt.Errorf("%w: unable to set power state of VM %s", errDriverConfiguration, name)
+		return *vmInfo.Status.Resources.PowerState == power, nil
+	})
 }
 
 func vmTaskUUID(response any) (string, error) {
@@ -820,45 +812,30 @@ func (d *NutanixDriver) credentials() client.Credentials {
 }
 
 func (d *NutanixDriver) waitForIP(ctx context.Context, conn *prismv3.Client, vmUUID string) error {
-	name := d.GetMachineName()
-	// Wait for the VM obtain an IP address
-	for attempt := range d.Timeout / taskPollSeconds {
+	return poll(ctx, func() (bool, error) {
 		vmInfo, err := conn.V3.GetVM(ctx, vmUUID)
 		if err != nil {
-			log.Errorf("Error getting vm: [%v]", err)
-
-			return fmt.Errorf(driverOperationFormat, err)
+			return false, fmt.Errorf("get VM IP: %w", err)
 		}
 
-		if len(vmInfo.Status.Resources.NicList[0].IPEndpointList) != 0 {
-			d.IPAddress = *vmInfo.Status.Resources.NicList[0].IPEndpointList[0].IP
-
-			break
+		if vmInfo == nil || vmInfo.Status == nil || vmInfo.Status.Resources == nil {
+			return false, errInvalidVM
 		}
 
-		if attempt == (d.Timeout/taskPollSeconds)-1 {
-			log.Errorf("Timeout waiting for vm %s to obtain an IP address", name)
-			log.Infof("Deleting VM %s (%s)", name, vmUUID)
-
-			_, err := conn.V3.DeleteVM(ctx, vmUUID)
-			if err != nil {
-				log.Errorf("Failed to delete VM %s (%s): %v", name, vmUUID, err)
-			}
-
-			return errIPTimeout
+		nics := vmInfo.Status.Resources.NicList
+		if len(nics) == 0 || nics[0] == nil || len(nics[0].IPEndpointList) == 0 ||
+			nics[0].IPEndpointList[0] == nil || nics[0].IPEndpointList[0].IP == nil || *nics[0].IPEndpointList[0].IP == "" {
+			return false, nil
 		}
 
-		log.Infof("Waiting VM %s ip configuration", name)
-		<-time.After(taskPollSeconds * time.Second)
-	}
+		d.IPAddress = *nics[0].IPEndpointList[0].IP
 
-	log.Infof("VM %s configured with ip address %s", name, d.IPAddress)
-
-	return nil
+		return true, nil
+	})
 }
 
 func (d *NutanixDriver) initialResources() *prismv3.VMResources {
-	res := &prismv3.VMResources{PowerState: new("ON")}
+	res := &prismv3.VMResources{PowerState: new(powerOn)}
 
 	res.MemorySizeMib = new(int64(d.VMMem))
 	res.NumSockets = new(int64(d.VMVCPUs))
@@ -931,48 +908,6 @@ func (d *NutanixDriver) guestCustomization() (*prismv3.GuestCustomization, error
 	}
 
 	return guestCustomization, nil
-}
-
-func (d *NutanixDriver) waitForCreateTask(ctx context.Context, conn *prismv3.Client, vmUUID, taskUUID string) error {
-	name := d.GetMachineName()
-	// Wait end of the task
-	for attempt := range d.Timeout / taskPollSeconds {
-		resp, err := conn.V3.GetTask(ctx, taskUUID)
-		if err != nil {
-			log.Errorf("Error getting task: [%v]", err)
-
-			return fmt.Errorf(driverOperationFormat, err)
-		}
-
-		switch *resp.Status {
-		case taskSucceeded:
-			log.Infof("VM %s creation task succeeded", name)
-
-			return nil
-		case "FAILED":
-			errMsg := strings.ReplaceAll(*resp.ErrorDetail, "\n", " ")
-			log.Errorf("Error creating vm: [%v]", errMsg)
-			log.Infof("Deleting VM %s (%s)", name, vmUUID)
-
-			_, err := conn.V3.DeleteVM(ctx, vmUUID)
-			if err != nil {
-				log.Errorf("Failed to delete VM %s (%s): %v", name, vmUUID, err)
-			}
-
-			return fmt.Errorf("%w: %s", errTaskFailed, errMsg)
-		}
-
-		if attempt == (d.Timeout/taskPollSeconds)-1 {
-			log.Errorf("Timeout waiting for vm %s to create", name)
-
-			return errCreateTimeout
-		}
-
-		log.Infof("VM %s creation is in %s state", name, *resp.Status)
-		<-time.After(taskPollSeconds * time.Second)
-	}
-
-	return nil
 }
 
 func (d *NutanixDriver) validateHardware() error {
@@ -1053,11 +988,11 @@ func (d *NutanixDriver) setDescription(description string) {
 	}
 }
 
-func (d *NutanixDriver) connect() (*prismv3.Client, error) {
+func (d *NutanixDriver) connect(ctx context.Context) (*prismv3.Client, error) {
 	credentials := d.credentials()
 	log.Infof(connectionLogFormat, credentials.URL)
 
-	conn, err := prismv3.NewV3Client(credentials)
+	conn, err := prismv3.NewV3ClientWithContext(ctx, credentials)
 	if err != nil {
 		return nil, fmt.Errorf("create Prism client: %w", err)
 	}
@@ -1197,7 +1132,7 @@ func (d *NutanixDriver) finishCreate(ctx context.Context, conn *prismv3.Client, 
 
 	log.Infof("waiting for vm %s (%s) to create: task %s", name, vmUUID, taskUUID)
 
-	err := d.waitForCreateTask(ctx, conn, vmUUID, taskUUID)
+	err := waitForTask(ctx, conn, taskUUID)
 	if err != nil {
 		return err
 	}
