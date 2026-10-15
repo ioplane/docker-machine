@@ -16,13 +16,14 @@ func TestPowerDeadlineAndPostcondition(t *testing.T) {
 	t.Parallel()
 
 	for _, testCase := range []struct {
-		name     string
-		observed string
-		hangBody bool
-		wantErr  bool
+		name        string
+		observed    string
+		hangBody    bool
+		wantErr     bool
+		submissions int64
 	}{
-		{name: "observed power", observed: "ON"},
-		{name: "task success without power transition", observed: "OFF", wantErr: true},
+		{name: "observed power", observed: "ON", submissions: 1},
+		{name: "task success without power transition", observed: "OFF", wantErr: true, submissions: 1},
 		{name: "stalled HTTP body", hangBody: true, wantErr: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -55,13 +56,8 @@ func TestPowerDeadlineAndPostcondition(t *testing.T) {
 				t.Fatalf("power postcondition error = %v, want deadline = %v", err, testCase.wantErr)
 			}
 
-			wantSubmissions := int64(1)
-			if testCase.hangBody {
-				wantSubmissions = 0
-			}
-
-			if got := submissions.Load(); got != wantSubmissions {
-				t.Fatalf("power submission count = %d, want %d", got, wantSubmissions)
+			if got := submissions.Load(); got != testCase.submissions {
+				t.Fatalf("power submission count = %d, want %d", got, testCase.submissions)
 			}
 		})
 	}

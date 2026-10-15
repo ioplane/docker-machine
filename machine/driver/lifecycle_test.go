@@ -77,13 +77,7 @@ func TestTaskTerminalContract(t *testing.T) {
 					t.Fatalf("terminal response polled again: calls=%d err=%v", calls, err)
 				}
 
-				if testCase.want != nil && !errors.Is(err, testCase.want) {
-					t.Fatalf("task error = %v, want %v", err, testCase.want)
-				}
-
-				if (err == nil) != (testCase.name == "success") || err != nil && strings.Contains(err.Error(), "sensitive-marker") {
-					t.Fatalf("unexpected success or server detail disclosure: %v", err)
-				}
+				assertTaskTerminalResult(t, err, testCase.want, testCase.code)
 			})
 		})
 	}
@@ -210,5 +204,19 @@ func TestTaskPendingAndThrottlingDeadline(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func assertTaskTerminalResult(t *testing.T, err, want error, code int) {
+	t.Helper()
+
+	if want != nil && !errors.Is(err, want) {
+		t.Fatalf("task error = %v, want %v", err, want)
+	}
+
+	success := code == http.StatusOK && want == nil
+
+	if (err == nil) != success || err != nil && strings.Contains(err.Error(), "sensitive-marker") {
+		t.Fatalf("unexpected success or server detail disclosure: %v", err)
 	}
 }
