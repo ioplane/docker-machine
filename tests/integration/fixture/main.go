@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net"
@@ -12,100 +13,153 @@ import (
 )
 
 type fixture struct {
-	sync.Mutex
+	mu sync.Mutex
+
 	Scenario string          `json:"scenario"`
 	Creates  int             `json:"creates"`
 	Payload  json.RawMessage `json:"payload"`
 }
 
+const (
+	scenarioBodyLimit = 1024
+	payloadBodyLimit  = 1 << 20
+)
+
+type scenarioInput struct {
+	Scenario string `json:"scenario"`
+}
+
 func main() {
-	f := &fixture{}
+	f := new(fixture)
 	server := httptest.NewUnstartedServer(http.HandlerFunc(f.serve))
-	listener, err := net.Listen("tcp", ":8443")
+
+	var listenConfig net.ListenConfig
+
+	// The disposable container must accept its published test port; no external credentials are served.
+	listener, err := listenConfig.Listen(context.Background(), "tcp", ":8443")
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err = server.Listener.Close(); err != nil {
+
+	err = server.Listener.Close()
+	if err != nil {
 		log.Fatal(err)
 	}
+
 	server.Listener = listener
 	server.StartTLS()
+
 	defer server.Close()
+
 	select {}
 }
 
-func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/health" {
-		w.WriteHeader(http.StatusOK)
+func (f *fixture) serve(writer http.ResponseWriter, request *http.Request) {
+	if request.URL.Path == "/health" {
+		writer.WriteHeader(http.StatusOK)
+
 		return
 	}
-	f.Lock()
-	defer f.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	if r.URL.Path == "/scenario" {
-		var input struct {
-			Scenario string `json:"scenario"`
-		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil {
-			http.Error(w, "invalid scenario", http.StatusBadRequest)
-			return
-		}
-		f.Scenario, f.Creates, f.Payload = input.Scenario, 0, nil
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	writer.Header().Set("Content-Type", "application/json")
+
+	switch request.URL.Path {
+	case "/scenario":
+		f.setScenario(writer, request)
+
 		return
-	}
-	if r.URL.Path == "/capture" {
-		if err := json.NewEncoder(w).Encode(f); err != nil {
+	case "/capture":
+		err := json.NewEncoder(writer).Encode(f)
+		if err != nil {
 			log.Print(err)
 		}
+
 		return
 	}
-	if r.URL.Path == "/api/nutanix/v3/vms" && r.Method == http.MethodPost {
-		f.Creates++
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&f.Payload); err != nil {
-			http.Error(w, "invalid payload", http.StatusBadRequest)
-			return
-		}
-		switch f.Scenario {
-		case "429":
-			w.WriteHeader(http.StatusTooManyRequests)
-		case "500":
-			w.WriteHeader(http.StatusInternalServerError)
-		case "malformed":
-			if _, err := w.Write([]byte("{")); err != nil {
-				log.Print(err)
-			}
-			return
-		case "missing-metadata":
-			if _, err := w.Write([]byte(`{"status":{"execution_context":{"task_uuid":"task"}}}`)); err != nil {
-				log.Print(err)
-			}
-			return
-		default:
-			if _, err := w.Write([]byte(`{"metadata":{"uuid":"fixture-vm"},"status":{"execution_context":{"task_uuid":null}}}`)); err != nil {
-				log.Print(err)
-			}
-			return
-		}
-		if _, err := w.Write([]byte("{}")); err != nil {
-			log.Print(err)
-		}
+
+	if request.URL.Path == "/api/nutanix/v3/vms" && request.Method == http.MethodPost {
+		f.createVM(writer, request)
+
 		return
 	}
+
+	serveLookup(writer, request)
+}
+
+func (f *fixture) setScenario(writer http.ResponseWriter, request *http.Request) {
+	var input scenarioInput
+
+	err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, scenarioBodyLimit)).Decode(&input)
+	if err != nil {
+		http.Error(writer, "invalid scenario", http.StatusBadRequest)
+
+		return
+	}
+
+	f.Scenario, f.Creates, f.Payload = input.Scenario, 0, nil
+}
+
+func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
+	f.Creates++
+
+	err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, payloadBodyLimit)).Decode(&f.Payload)
+	if err != nil {
+		http.Error(writer, "invalid payload", http.StatusBadRequest)
+
+		return
+	}
+
+	var response string
+
+	switch f.Scenario {
+	case "429":
+		writer.WriteHeader(http.StatusTooManyRequests)
+
+		response = "{}"
+	case "500":
+		writer.WriteHeader(http.StatusInternalServerError)
+
+		response = "{}"
+	case "malformed":
+		response = "{"
+	case "missing-metadata":
+		response = `{"status":{"execution_context":{"task_uuid":"task"}}}`
+	default:
+		response = `{"metadata":{"uuid":"fixture-vm"},"status":{"execution_context":{"task_uuid":null}}}`
+	}
+
+	writeResponse(writer, []byte(response))
+}
+
+func serveLookup(writer http.ResponseWriter, request *http.Request) {
 	names := map[string]string{
 		"/api/nutanix/v3/clusters/list": "clusters.json",
 		"/api/nutanix/v3/subnets/list":  "subnets.json",
 		"/api/nutanix/v3/images/list":   "images.json",
 	}
-	if name, ok := names[r.URL.Path]; ok {
+
+	if name, ok := names[request.URL.Path]; ok {
 		data, err := os.ReadFile("/fixtures/" + name)
 		if err != nil {
-			http.Error(w, "fixture missing", http.StatusInternalServerError)
+			http.Error(writer, "fixture missing", http.StatusInternalServerError)
+
 			return
 		}
-		if _, err := w.Write(data); err != nil {
-			log.Print(err)
-		}
+
+		writeResponse(writer, data)
+
 		return
 	}
-	http.Error(w, "unexpected fixture path", http.StatusNotFound)
+
+	http.Error(writer, "unexpected fixture path", http.StatusNotFound)
+}
+
+func writeResponse(writer http.ResponseWriter, data []byte) {
+	_, err := writer.Write(data)
+	if err != nil {
+		log.Print(err)
+	}
 }

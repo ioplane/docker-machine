@@ -66,7 +66,7 @@ release-check:
 release:
 	$(RELEASE_RUN) --env GITHUB_TOKEN $(RELEASE_IMAGE) sh -ec 'cd machine; goreleaser release --clean'
 
-check: mod-check test race vet lint fmt-check vuln build
+check: mod-check test race vet lint fmt-check vuln build integration-mod-check integration-quality
 
 # Testcontainers uses an unprivileged Podman service, never the host root socket.
 PODMAN_SOCKET ?= $(XDG_RUNTIME_DIR)/podman/podman.sock
@@ -86,3 +86,9 @@ integration:
 		sh -ec 'cd tests/integration; go test -race -count=1 -shuffle=on -timeout=5m -v ./...'
 
 .PHONY: integration-build integration-mod-check integration
+
+integration-quality:
+	$(PODMAN_RUN) -w /src/tests/integration $(LINT_IMAGE) sh -ec 'golangci-lint run --timeout=5m ./...; golangci-lint fmt --diff > /tmp/integration-format.patch; test ! -s /tmp/integration-format.patch || { cat /tmp/integration-format.patch; exit 1; }'
+	$(DEV_RUN) go tool govulncheck -C tests/integration -test ./...
+
+.PHONY: integration-quality
