@@ -73,6 +73,7 @@ func TestPrismBoundary(t *testing.T) {
 	}
 
 	t.Run("crash-restart", func(t *testing.T) { runCrashRecovery(t, client, endpoint) })
+	t.Run("cli-secret-checkpoint", func(t *testing.T) { runCLISecretRecovery(t, client, endpoint) })
 }
 
 func startFixture(t *testing.T) (string, *http.Client) {

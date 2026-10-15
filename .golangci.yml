@@ -52,6 +52,7 @@ linters:
         - github.com/nutanix/docker-machine # Local integration module only.
         - github.com/urfave/cli # Rancher RPC-compatible CLI implementation.
         - github.com/nutanix-cloud-native/prism-go-client # Isolated transport security fix.
+        - github.com/rancher/machine # Joint optional recovery RPC consumer.
     gocritic:
       enable-all: true
     cyclop:

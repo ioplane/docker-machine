@@ -46,8 +46,13 @@ func (d *NutanixDriver) prepareIdentity(ctx context.Context, conn *prismv3.Clien
 	request *prismv3.VMIntentInput,
 ) error {
 	subnetUUID := *request.Spec.Resources.NicList[0].SubnetReference.UUID
+	consumerMode := ""
 
-	err := store.reserve(ctx, conn, subnetUUID, *request.Spec.ClusterReference.UUID)
+	if d.ConsumerCreateBinding != "" {
+		consumerMode = consumerRecoveryMode
+	}
+
+	err := store.reserve(ctx, conn, subnetUUID, *request.Spec.ClusterReference.UUID, consumerMode)
 	if err != nil {
 		return err
 	}

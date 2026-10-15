@@ -5,11 +5,20 @@
 ## Rancher и исполняемый driver
 
 Исходный upstream использует архивированный `github.com/docker/machine v0.16.2`.
-Выбран сопровождаемый `github.com/rancher/machine v0.15.0-rancher145.2`, SHA
+База совместимости — сопровождаемый `github.com/rancher/machine v0.15.0-rancher145.2`, SHA
 `407bfdc12e6fdfd19c9d76d565d552ea5b39f363`: именно эту версию использует
 [Rancher v2.15.2](https://github.com/rancher/rancher/blob/272e65580ca92b9dc51e0f0f0f9ae9d6d356e3b8/go.mod#L129).
 Это выбор канала совместимости с потребителем. Более высокий SemVer старой
 ветки Machine и RC другого канала не являются автоматическим обновлением.
+
+Для optional recovery закреплён совместный consumer fork:
+`github.com/ioplane/rancher-machine v0.15.1-0.20261015203543-8661095ef1e0`,
+commit `8661095ef1e05265e5c7b7bc212fc473c6e59a7c`,
+[PR #1](https://github.com/ioplane/rancher-machine/pull/1).
+Root и isolated integration module используют один replacement; SDK pin
+`70ca9c60ff066dfa3ee00977d0f4c27998874245` сохранён. Consumer сохраняет module
+floor Go 1.26.0 при toolchain Go 1.27.2; driver floor остаётся Go 1.27.0.
+Это fork commit поверх выбранной базы, а не upstream release `v0.15.1`.
 
 Node driver — отдельный процесс. Его совместимость определяется plugin handshake,
 RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после нормализации imports
@@ -179,9 +188,29 @@ management-подсети. Отсутствие IP не вызывает уда�
 тот же pre-Create machine checkpoint с журналом и ключами. TC проверяет
 driver-level restore копии старого checkpoint в новый StorePath после SIGKILL
 с явным переносом SSHKeyPath в test fixture. Это
-этап `um-docs-nrsu.4.8.1.1`; реальный Rancher CLI отказывает при Exists(name)
-до driver hook. Автоматический consumer resume и приёмка Job/pod/controller
-остаются `um-docs-nrsu.4.8.1.2`; родительская `um-docs-nrsu.4.8.1` не закрыта.
+этап `um-docs-nrsu.4.8.1.1`. Optional consumer recovery описан ниже;
+приёмка Job/pod/controller и родительская `um-docs-nrsu.4.8.1` не закрыты.
+
+Optional `PrepareCreateRecovery(DriverOptions, CreateRecoveryContext)` не меняет
+обязательный Driver interface или protocol version. Новый consumer передаёт
+SSH custom-script context до обычных SetConfigFromFlags/PreCreateCheck/Save.
+Digest связывает точные script bytes, effective hostname и режим
+`ssh-custom-script/v1` с прежним VM/SSH intent; API credentials допускают
+ротацию. SSH user нормализуется до первого хеша. Журнал содержит только
+optional `consumerMode`, config — optional `consumerCreateBinding`; script,
+его путь и raw secrets в эти поля не записываются.
+
+При Exists(name) сначала проверяются безопасная форма журнала и pending phase
+с выделенным UUID. Отсутствующий, markerless, complete, removed или allocating
+журнал возвращает false до чтения текущих флагов и script. Для eligible записи
+текущие flags/script/hostname и исходная SSH key pair должны совпасть с binding;
+известный чужой VMId или повреждённый UUID блокируют восстановление до API.
+Hook не вызывает Prism и не восстанавливает право POST. Последующий Create
+наблюдает только исходный UUID. Обычные GetState/Remove после JSON restore
+используют сохранённый digest без script mount. Более старый consumer или
+markerless checkpoint не получает automatic resume; облачные userdata flows
+не входят в SSH custom-script opt-in. CLI/SecretStore/Job/pod/controller
+приёмка фиксируется отдельным receipt по точным consumer и driver SHA.
 
 Allocator вызывается с count=1 и valid_duration_in_minutes=1440.
 Опциональный client_identifier в ответе может отсутствовать; непустое чужое
@@ -203,3 +232,26 @@ Remove идемпотентен. Legacy config с VMId и без журнала 
 Источники consumer checkpoint: [Secret Save](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/libmachine/persist/secretstore.go#L65),
 [RPC marshal](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/libmachine/drivers/rpc/client_driver.go#L201),
 [CLI Exists guard](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/commands/create.go#L218).
+
+## CLI/RPC/SecretStore checkpoint
+
+`tests/integration/consumer_linux_test.go` использует настоящий consumer CLI и
+Nutanix plugin с локальными Prism/Kubernetes fixtures. Первый pre-Create Secret
+PUT обязан содержать reserved-журнал с выделенным UUID, consumer proof и SSH-пару.
+После потерянного ответа VM POST вся группа CLI/plugin завершается; её локальное
+состояние сохраняется отдельным test-owned backup. Новый процесс использует тот
+же абсолютный storage path: checkpoint извлекает `NewSecretStore`, без ручного
+копирования config, журнала или ключей. Текущие API credentials задаются заново.
+
+Приёмочная граница — второй PUT replacement-процесса: Driver.Create вернул nil,
+archive содержит complete-журнал, allocated VMId, непустой management IP и
+неизменные proof/SSH digest. Ответ PUT удерживается до SIGKILL всей группы;
+переход к GetState/DetectProvisioner/SSH исключён этой границей. Проверяются один
+allocator POST, один VM POST, ноль DELETE, только owned-UUID recovery GET и
+закрытие всех записанных RPC listeners. Завершение `api.Save`, bootstrap гостя,
+полный CLI success и Rancher pod replacement этим тестом не утверждаются.
+
+`make integration-build` собирает CLI из exact replacement module directory и
+реальный plugin; `make integration` выполняет сценарий в существующем
+Testcontainers suite на rootless Podman CI. Rootful host runtime не заменяет эту
+приёмку и не перенастраивается ради теста.

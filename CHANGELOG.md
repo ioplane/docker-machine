@@ -7,6 +7,9 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Optional consumer Create recovery validates pending owned-UUID journals before current flags or install scripts. SSH custom-script bytes, effective hostname and mode join the intent digest; legacy, complete and removed journals remain ineligible. Persisted digests support later lifecycle operations without the script mount; recovery never reconstructs VM POST permission.
+- The actual CLI/plugin/SecretStore crash test validates the post-Create Secret PUT after restoring the pre-Create archive at the same absolute path, without guest SSH or a duplicate VM POST.
+
 - The measured W0 compiler/API and performance receipt is linked from the development plan; legacy vendor files remain outside the compiler input set.
 
 - Reproducible offline performance baselines with fixture assertions and repeated allocation/latency samples; benchmark smoke checks run under the race detector. No production workload or performance tuning is performed.
@@ -39,6 +42,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - API response diagnostics no longer echo server payloads, messages, details or arbitrary HTTP status text, while preserving cancellation and JSON causes through errors.Is/As.
 
 ### Fixed
+
+- Create intent normalizes the default SSH username before hashing, so later SSH provisioning and JSON-restored lifecycle operations retain the same journal binding.
 
 - PreCreateCheck reserves VM identity and bootstrap files before the consumer archives its machine directory. An independent per-machine journal recovers interrupted allocation by its stable client ID; VM response loss and restored checkpoints reconcile only the reserved UUID, without replaying an unknown VM POST or deleting a VM for a missing IP. Linux file locks serialize operations; corrupt, unsafe or mismatched journals fail closed. Breaking: operations require a durable or restored local Linux machine store, and preparation requires access to the Prism v3 idempotence allocator; there is no unsafe fallback. The consumer RPC/config format and legacy VMId removal remain compatible; automatic Rancher CLI resume is a separate consumer stage.
 

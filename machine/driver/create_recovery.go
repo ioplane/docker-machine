@@ -48,13 +48,15 @@ func (d *NutanixDriver) submitCreate(ctx context.Context, store *journalStore) e
 	return d.acceptCreate(ctx, conn, store, response, subnetUUID)
 }
 
-func (s *journalStore) reserve(ctx context.Context, conn *prismv3.Client, subnetUUID, clusterUUID string) error {
+func (s *journalStore) reserve(ctx context.Context, conn *prismv3.Client, subnetUUID, clusterUUID, consumerMode string,
+) error {
 	fresh := s.journal == nil
 	if fresh {
 		s.journal = &createJournal{
 			Version: journalVersion, Binding: s.binding, Phase: phaseAllocating,
 			ClientID: uuid.NewString(), SubnetUUID: subnetUUID, ClusterUUID: clusterUUID,
 			VMUUID: "", TaskUUID: "", Expires: time.Time{},
+			ConsumerMode: consumerMode,
 		}
 
 		err := s.save()

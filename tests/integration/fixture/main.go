@@ -17,12 +17,14 @@ import (
 type fixture struct {
 	mu sync.Mutex
 
-	Scenario    string          `json:"scenario"`
-	Creates     int             `json:"creates"`
-	Payload     json.RawMessage `json:"payload"`
-	VMReads     int             `json:"vm_reads"` //nolint:tagliatelle // Fixture capture schema.
-	ClientID    string          `json:"clientId"`
-	Allocations int             `json:"allocations"`
+	Scenario        string          `json:"scenario"`
+	Creates         int             `json:"creates"`
+	Payload         json.RawMessage `json:"payload"`
+	VMReads         int             `json:"vm_reads"` //nolint:tagliatelle // Fixture capture schema.
+	ClientID        string          `json:"clientId"`
+	Allocations     int             `json:"allocations"`
+	Deletes         int             `json:"deletes"`
+	RecoveryVMReads []string        `json:"recoveryVmReads"`
 }
 
 const (
@@ -105,6 +107,20 @@ func (f *fixture) serve(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(request.URL.Path, "/api/nutanix/v3/vms/") {
+		if request.Method == http.MethodDelete {
+			f.Deletes++
+
+			http.Error(writer, "unexpected fixture VM deletion", http.StatusConflict)
+
+			return
+		}
+
+		if f.Scenario == recoveryScenario && request.Method == http.MethodGet {
+			f.RecoveryVMReads = append(f.RecoveryVMReads, strings.TrimPrefix(request.URL.Path, "/api/nutanix/v3/vms/"))
+		}
+	}
+
 	if f.serveNetworkScenario(writer, request) || f.serveLifecycleScenario(writer, request) {
 		return
 	}
@@ -123,6 +139,7 @@ func (f *fixture) setScenario(writer http.ResponseWriter, request *http.Request)
 	}
 
 	f.Scenario, f.Creates, f.Payload, f.VMReads, f.Allocations, f.ClientID = input.Scenario, 0, nil, 0, 0, ""
+	f.Deletes, f.RecoveryVMReads = 0, nil
 }
 
 func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
