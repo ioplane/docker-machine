@@ -16,7 +16,8 @@ func TestStatefulNetworkScenarios(t *testing.T) {
 
 			f := &fixture{Scenario: scenario}
 			response := httptest.NewRecorder()
-			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/nutanix/v3/vms/fixture-vm", http.NoBody)
+			path := "/api/nutanix/v3/vms/" + fixtureVMUUID
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, http.NoBody)
 			f.serve(response, request)
 
 			if response.Code != http.StatusOK || !json.Valid(response.Body.Bytes()) {

@@ -145,9 +145,58 @@ IP берётся с единственной NIC первой заявленн�
 старого профиля или end-to-end IPv6 support.
 
 
-Create с известным VMId требует reconcile и не подаёт новый POST. Remove
-проверяет UUID и exact VM metadata, не отправляет DELETE при observed GET404
-и требует отсутствия VM после successful task. HTTP403, чужой UUID либо
-неподтверждённое отсутствие не дают success. Эти guards не заменяют durable
-journal: закреплённый Machine consumer не сохраняет Nutanix state после
-failed Create; полноценный restart/lost-response recovery остаётся4.8.1.
+Create с известным VMId не подаёт новый POST. Независимый журнал
+`StorePath/machines/MachineName/nutanix-create.json` сохраняет stable allocator
+client ID до allocator POST, выделенный VM UUID, cluster, management subnet,
+task и фазу операции. Хеш намерения связывает endpoint, machine, профиль VM,
+cloud-init, SSH user/password и содержимое публичного SSH key. Секреты,
+публичный ключ и raw userdata в журнал не записываются; consumer config.json
+не перезаписывается. Потерянный allocator response восстанавливается через GET
+того же client ID; после VM POST возможен только GET точного выделенного UUID.
+GET404 после неопределённого VM outcome не разрешает повторный POST.
+Remove также сохраняет этот журнал и возвращает ошибку при GET404, пока
+нет terminal create task: позднее завершение исходного POST ещё возможно.
+
+PreCreateCheck выделяет UUID и подготавливает SSH files до Machine Save,
+архивирующего machine directory в Secret. Разрешение единственного VM POST
+остаётся в памяти текущего ActualDriver; GetConfigRaw его не сериализует.
+Восстановленный checkpoint reserved также считается unknown: разрешён только
+GET выделенного UUID, даже если исходный процесс не успел подать POST.
+Прямой Create без hook поддерживается при сохранении локального store.
+
+Breaking: для операций требуется сохраняемый StorePath на Linux с локальными
+flock, atomic rename и fsync; Create дополнительно требует поддержки и доступа
+к POST/GET Prism v3 idempotence allocator. Небезопасного fallback нет.
+Каталоги принадлежат effective UID и недоступны для чужой записи; журнал и
+постоянный lock inode — private regular files. Требуются сохранение machine
+directory и исходного bootstrap key. Неверный binding, повреждение,
+symlink/hardlink либо небезопасные права блокируют API. После перезапуска
+проверяются UUID, имя и cluster VM; IP выбирается по сохранённой
+management-подсети. Отсутствие IP не вызывает удаления.
+Локальный restart сохраняет StorePath; замена процесса может восстановить
+тот же pre-Create machine checkpoint с журналом и ключами. TC проверяет
+driver-level restore старого checkpoint в новый store после SIGKILL. Это
+этап `um-docs-nrsu.4.8.1.1`; реальный Rancher CLI отказывает при Exists(name)
+до driver hook. Автоматический consumer resume и приёмка Job/pod/controller
+остаются `um-docs-nrsu.4.8.1.2`; родительская `um-docs-nrsu.4.8.1` не закрыта.
+
+Allocator вызывается с count=1 и valid_duration_in_minutes=1440.
+Опциональный client_identifier в ответе может отсутствовать; непустое чужое
+значение отклоняется. Driver намеренно требует future expiration_time перед
+VM POST, хотя Swagger помечает поле опциональным: отсутствие безопасного
+срока действия даёт fail-closed без VM mutation. Источник —
+[закреплённый v3 Swagger](https://github.com/ioplane/prism-go-client/blob/70ca9c60ff066dfa3ee00977d0f4c27998874245/v3/swagger.json#L17731).
+
+Remove восстанавливает UUID из журнала и проверяет exact VM metadata; GET404
+даёт success без DELETE при подтверждённом terminal create outcome. После
+DELETE требуется observed absence; повторный
+Remove идемпотентен. Legacy config с VMId и без журнала сохраняет прежний путь
+при действительных StorePath/timeout. Create/Remove/power и GetState
+сериализуются по machine store, включая разные процессы. Configuration остаётся
+неизменной от PreCreateCheck до возврата Create; чтение bootstrap IP выполняется
+после неё, как в закреплённом
+[Machine consumer](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/libmachine/libmachine.go#L117).
+Одновременная внешняя запись exported fields не поддерживается.
+Источники consumer checkpoint: [Secret Save](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/libmachine/persist/secretstore.go#L65),
+[RPC marshal](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/libmachine/drivers/rpc/client_driver.go#L201),
+[CLI Exists guard](https://github.com/rancher/machine/blob/407bfdc12e6fdfd19c9d76d565d552ea5b39f363/commands/create.go#L218).

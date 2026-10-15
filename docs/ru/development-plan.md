@@ -1,7 +1,13 @@
-# Nutanix node driver: план модернизации v11
+# Nutanix node driver: план модернизации v12
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
+
+Канонический v12 закрывает input/HTTP/auth/deadline/NIC prerequisite batch;
+источник приёмки — его общий индекс и exact-head receipts. Следующий активный
+scope — `um-docs-nrsu.4.8.1.1`: driver journal/checkpoint. Parent `um-docs-nrsu.4.8.1`
+остаётся открытым до consumer resume `um-docs-nrsu.4.8.1.2`. Секции v3–v11 ниже
+содержат исторические снимки этапов; актуальные ограничения C1 приведены в v12.
 
 ## Порядок
 
@@ -285,28 +291,49 @@ Testcontainers queues fixture использует name-first/UUID порядо�
 subnet UUID каждой NIC; остальные boundary scenarios сохраняются.
 
 
-## Reconcile: первая защитная часть v11
+## Reconcile: журнал операции v12
 
-`um-docs-nrsu.4.8.1`, in_progress: Create с известным VMId отклоняется до API.
-Remove проверяет UUID и exact VM metadata перед DELETE. Подтверждённый GET404
-возвращает успех без DELETE; 403 и несовпадающий VM UUID запрещают mutation.
-После task success требуется observed GET404. Delete404 либо terminal task
-failure сами по себе не означают отсутствие: выполняется readback. Нет blind
-retry mutation или поиска VM по имени; известный VMId сохраняется.
+`um-docs-nrsu.4.8.1.1`: private per-machine journal фиксирует client ID до
+allocator mutation, затем UUID/subnet/cluster до VM POST и task до ожидания.
+Atomic file write, file/directory fsync и постоянный flock inode защищают
+публикацию и сериализацию. После interrupted allocator POST используется GET
+того же client ID. После неопределённого VM POST повторной mutation нет:
+выполняется exact UUID/name/cluster readback и выбор IP сохранённой подсети.
+GET404 не доказывает, что исходный POST не выполнится позже; автоматический
+новый POST и удаление из-за отсутствия IP запрещены. Remove допускает
+повторный observed404 и проверяет владение перед DELETE.
 
-Это не полный crash/lost-response recovery. Pinned Rancher Machine
+PreCreateCheck готовит reserved UUID/journal и SSH key до Machine Save;
+памятная attestation разрешает текущему процессу подать единственный VM POST.
+Restored reserved checkpoint права на POST не содержит и допускает только
+GET точного UUID. Pinned Rancher Machine
 `libmachine/libmachine.go:117–161` сохраняет host до Create и после success;
 после ошибки отдельное сохранение предусмотрено только для vmwarevsphere.
 Nutanix VMId, изменённый в failed RPC Create, не получает этим путём гарантии
 постоянного хранения. `rpc/server_driver.go:107–115,133–142`: GetConfigRaw —
-отдельный marshal, а Create возвращает ошибку. Context7 `/rancher/rancher` не
+отдельный marshal без замены ActualDriver, а Create возвращает ошибку. Secret
+store Save архивирует machine directory, включая подготовленный журнал и ключи.
+Context7 `/rancher/rancher` не
 содержит ответа; вывод основан на точном dependency source407bfdc12e6fdfd19c9d76d565d552ea5b39f363.
 
 Pinned v3 Swagger: public POST/GET `/idempotence_identifiers` выделяет UUID4
 по client_identifier; произвольный UUID по умолчанию не принимается в Create.
 `/idempotence_identifiers/salted` помечен x-internal и предупреждает о UUID5
 коллизиях между environments; v4 NTNX-Request-ID не переносится в v3.
-Следующая часть: allocator в SDK, сохранение client identifier до mutation,
-защищённый durable journal и его binding к endpoint/host/intent, recovery после
-restart и отдельная executable RPC/TC проверка. Задача не закрывается этими
-локальными guards; новых RPC/config fields и журнала пока нет.
+SDK уже содержит allocator operations; новые SDK wrappers, dependencies,
+CLI/RPC/config fields не требуются. Binding содержит digest bootstrap identity;
+при восстановлении ключ не генерируется заново. Неизвестная, повреждённая или
+чужая запись блокирует API. Требуются Linux, сохраняемый local machine store,
+allocator permission и future expiration_time; пустой client identifier echo
+разрешён. Breaking-ограничения — [совместимость](compatibility.md).
+
+Критичные проверки используют существующие HTTP fixtures и Testcontainers:
+потеря allocator/VM response, failed task, IP timeout, unknown404, чужая VM,
+повторный Remove, late Create, файловая граница и конкурирующий Create. TC
+сохраняет checkpoint до VM POST, теряет ответ, убивает дочерний процесс и
+восстанавливает старые machine files в replacement store. UUID/IP
+восстанавливаются при единственных allocator POST и VM POST. Этап требует
+exact-head CI и отдельные SPEC/quality reviews. CLI Exists(name) блокирует
+автоматический повтор create до driver hook; consumer opt-in resume относится
+к `um-docs-nrsu.4.8.1.2`. Parent C1 остаётся открытым; live Prism, production
+registration и canary не входят в этот driver stage.

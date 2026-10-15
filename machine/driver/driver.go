@@ -98,6 +98,7 @@ type NutanixDriver struct {
 	Timeout          int
 	GPUs             []string
 	Description      string
+	prepared         *preparedCreate
 }
 
 // NewDriver create new instance.
@@ -111,18 +112,35 @@ func NewDriver(hostname, storePath string) *NutanixDriver {
 }
 
 // Create a host using the driver's config.
-func (d *NutanixDriver) Create() error {
-	if d.VMId != "" {
-		return fmt.Errorf("%w: existing VM identity requires reconciliation before Create", errDriverConfiguration)
-	}
-
+func (d *NutanixDriver) Create() (result error) {
 	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return err
 	}
 	defer cancel()
 
-	return d.createVM(ctx)
+	store, err := d.openCreateJournal(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, store.close()) }()
+
+	if d.VMId != "" && (store.journal == nil || !strings.EqualFold(d.VMId, store.journal.VMUUID)) {
+		return fmt.Errorf("%w: existing VM identity requires reconciliation before Create", errDriverConfiguration)
+	}
+
+	if store.journal != nil && store.journal.VMUUID != "" && !d.preparedFor(store.journal) {
+		return d.recoverCreate(ctx, store)
+	}
+
+	if !d.preparedFor(store.journal) {
+		err = d.prepareCreate(ctx, store)
+		if err != nil {
+			return err
+		}
+	}
+
+	return d.submitCreate(ctx, store)
 }
 
 // DriverName returns the name of the driver.
@@ -284,12 +302,27 @@ func (d *NutanixDriver) GetURL() (string, error) {
 }
 
 // GetState returns the state that the host is in (running, stopped, etc).
-func (d *NutanixDriver) GetState() (state.State, error) {
+func (d *NutanixDriver) GetState() (_ state.State, resultErr error) {
 	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return state.Error, err
 	}
 	defer cancel()
+
+	store, err := d.openCreateJournal(ctx)
+	if err != nil {
+		return state.Error, err
+	}
+
+	defer func() { resultErr = errors.Join(resultErr, store.close()) }()
+
+	if store.journal != nil {
+		if store.journal.VMUUID == "" || (d.VMId != "" && !strings.EqualFold(d.VMId, store.journal.VMUUID)) {
+			return state.Error, errCreateRecovery
+		}
+
+		d.VMId = store.journal.VMUUID
+	}
 
 	conn, err := d.connect(ctx)
 	if err != nil {
@@ -321,24 +354,60 @@ func (d *NutanixDriver) Kill() error {
 }
 
 // Remove a host.
-func (d *NutanixDriver) Remove() error {
+func (d *NutanixDriver) Remove() (result error) {
+	ctx, cancel, err := d.operationContext()
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	store, err := d.openCreateJournal(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() { result = errors.Join(result, store.close()) }()
+
+	err = d.restoreRemovalIdentity(ctx, store)
+	if err != nil {
+		return err
+	}
+
 	if d.VMId == "" {
 		log.Infof("VMId is empty, nothing to remove")
 
 		return nil
 	}
 
-	return d.removeVM()
+	err = d.removeVM(ctx)
+	if err != nil {
+		return err
+	}
+
+	if store.journal != nil {
+		store.journal.Phase = phaseRemoved
+
+		return store.save()
+	}
+
+	return nil
 }
 
 // Restart a host. This may just call Stop(); Start() if the provider does not
 // have any special restart behaviour.
-func (d *NutanixDriver) Restart() error {
+func (d *NutanixDriver) Restart() (result error) {
 	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return err
 	}
 	defer cancel()
+
+	store, err := d.lockMutation(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() { result = errors.Join(result, store.close()) }()
 
 	err = d.setPowerStateContext(ctx, powerOff)
 	if err != nil {
@@ -408,13 +477,18 @@ func (d *NutanixDriver) Start() error { return d.setPowerState(powerOn) }
 // Stop a host.
 func (d *NutanixDriver) Stop() error { return d.setPowerState(powerOff) }
 
-func (d *NutanixDriver) createVM(ctx context.Context) error {
+func (d *NutanixDriver) prepareCreate(ctx context.Context, store *journalStore) error {
 	err := d.validateHardware()
 	if err != nil {
 		return fmt.Errorf(driverOperationFormat, err)
 	}
 
 	customization, err := d.guestCustomization()
+	if err != nil {
+		return err
+	}
+
+	store.binding, err = d.createBinding()
 	if err != nil {
 		return err
 	}
@@ -467,26 +541,13 @@ func (d *NutanixDriver) createVM(ctx context.Context) error {
 
 	request := &prismv3.VMIntentInput{Metadata: metadata, Spec: spec}
 
-	resp, err := conn.V3.CreateVM(ctx, request)
-	if err != nil {
-		log.Errorf("Error creating vm: [%v]", err)
-
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	return d.finishCreate(ctx, conn, resp, *res.NicList[0].SubnetReference.UUID)
+	return d.prepareIdentity(ctx, conn, store, request)
 }
 
-func (d *NutanixDriver) removeVM() error {
+func (d *NutanixDriver) removeVM(ctx context.Context) error {
 	if !isUUID(d.VMId) {
 		return errInvalidVM
 	}
-
-	ctx, cancel, err := d.operationContext()
-	if err != nil {
-		return err
-	}
-	defer cancel()
 
 	conn, err := d.connect(ctx)
 	if err != nil {
@@ -560,12 +621,19 @@ func (d *NutanixDriver) nicQueues() (*int64, error) {
 	return &queues, nil
 }
 
-func (d *NutanixDriver) setPowerState(power string) error {
+func (d *NutanixDriver) setPowerState(power string) (result error) {
 	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return err
 	}
 	defer cancel()
+
+	store, err := d.lockMutation(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() { result = errors.Join(result, store.close()) }()
 
 	return d.setPowerStateContext(ctx, power)
 }

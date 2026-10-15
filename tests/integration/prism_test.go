@@ -24,6 +24,7 @@ const (
 	fixtureMemoryMiB      = 2048
 	fixtureTimeoutSeconds = 5
 	fixtureKeyMode        = 0o600
+	fixtureDirectoryMode  = 0o700
 	fixtureNICCount       = 3
 	missingSubnetScenario = "missing-subnet"
 )
@@ -50,8 +51,9 @@ type capturedPayload struct {
 }
 
 type capturedCreate struct {
-	Creates int             `json:"creates"`
-	Payload capturedPayload `json:"payload"`
+	Creates     int             `json:"creates"`
+	Allocations int             `json:"allocations"`
+	Payload     capturedPayload `json:"payload"`
 }
 
 //nolint:paralleltest // Scenarios share one mutable container fixture and must run in sequence.
@@ -66,6 +68,8 @@ func TestPrismBoundary(t *testing.T) {
 			runScenario(t, client, endpoint, scenario)
 		})
 	}
+
+	t.Run("crash-restart", func(t *testing.T) { runCrashRecovery(t, client, endpoint) })
 }
 
 func startFixture(t *testing.T) (string, *http.Client) {
@@ -228,7 +232,12 @@ func newDriver(t *testing.T, endpoint string) *driver.NutanixDriver {
 	nodeDriver.VMMem, nodeDriver.Timeout = fixtureMemoryMiB, fixtureTimeoutSeconds
 	nodeDriver.VMNicQueues, nodeDriver.BootType = "2", "legacy"
 	nodeDriver.Subnet = []string{"overlay", "11111111-1111-1111-1111-111111111111", "vlan"}
-	nodeDriver.SSHKeyPath = filepath.Join(t.TempDir(), "id_rsa")
+	nodeDriver.SSHKeyPath = filepath.Join(nodeDriver.StorePath, "machines", nodeDriver.MachineName, "id_rsa")
+
+	err = os.MkdirAll(filepath.Dir(nodeDriver.SSHKeyPath), fixtureDirectoryMode)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, suffix := range []string{"", ".pub"} {
 		writeErr := os.WriteFile(nodeDriver.SSHKeyPath+suffix, []byte("fixture-placeholder"), fixtureKeyMode)

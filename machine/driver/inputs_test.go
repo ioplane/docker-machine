@@ -105,6 +105,7 @@ func TestCloudInitRootMerge(t *testing.T) {
 			assertMergedRoot(t, data, input)
 
 			// Reusing the merged input must not duplicate root or its bootstrap key.
+			nodeDriver = payloadDriver(t, fixture.server, fixtureQueues)
 			nodeDriver.CloudInit = string(data)
 
 			err = nodeDriver.Create()

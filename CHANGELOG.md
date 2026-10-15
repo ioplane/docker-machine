@@ -40,11 +40,13 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- PreCreateCheck reserves VM identity and bootstrap files before the consumer archives its machine directory. An independent per-machine journal recovers interrupted allocation by its stable client ID; VM response loss and restored checkpoints reconcile only the reserved UUID, without replaying an unknown VM POST or deleting a VM for a missing IP. Linux file locks serialize operations; corrupt, unsafe or mismatched journals fail closed. Breaking: operations require a durable or restored local Linux machine store, and preparation requires access to the Prism v3 idempotence allocator; there is no unsafe fallback. The consumer RPC/config format and legacy VMId removal remain compatible; automatic Rancher CLI resume is a separate consumer stage.
+
 - Header-only cloud-init retains the exact `#cloud-config` recognition marker after the root SSH key merge.
 
 - The disposable Prism fixture covers duplicate VLAN/VPC subnet names and reordered management NICs with nil endpoints and deterministic IPv4 selection; partial network profiles never reach VM creation.
 
-- Create refuses resubmission while a VM identity is known. Remove validates that identity, observes the exact VM before deletion, returns success for confirmed absence without a DELETE, and requires observed absence after a successful delete task. HTTP 404 and terminal task errors are reconciled through VM readback; no mutation is retried. Durable unknown-outcome recovery still requires allocator and persistence integration.
+- Create refuses resubmission while a VM identity is known. Remove validates that identity, observes the exact VM before deletion, returns success for confirmed absence without a DELETE, and requires observed absence after a successful delete task. HTTP 404 and terminal task errors are reconciled through VM readback; no mutation is retried.
 
 - NIC payloads preserve the declared network order; named subnet lookups require exactly one candidate. Duplicate subnet identities, ambiguous VLAN/VPC names and malformed inventories are rejected without a partial profile. Management IP selection follows the first declared subnet UUID rather than the response NIC position, validates endpoints and uses stable IPv4-first address ordering.
 
