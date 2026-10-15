@@ -124,11 +124,12 @@ func cloudInitRoot(users *yaml.Node) (*yaml.Node, error) {
 			}
 
 			name = fields["name"]
-			if name == nil {
-				continue // cloud-init also supports snapuser entries without name.
-			}
 		} else if user.Kind != yaml.ScalarNode {
 			return nil, errCloudInitSyntax
+		}
+
+		if name == nil {
+			continue // cloud-init also supports snapuser entries without name.
 		}
 
 		if name.Kind != yaml.ScalarNode || name.Tag != yamlStringTag || name.Value == "" {
@@ -143,17 +144,17 @@ func cloudInitRoot(users *yaml.Node) (*yaml.Node, error) {
 			return nil, errCloudInitSyntax
 		}
 
-		if user.Kind == yaml.ScalarNode {
-			user.Kind, user.Tag, user.Value = yaml.MappingNode, yamlMappingTag, ""
-			user.Content = buildStringNodes("name", "root", "")
-		}
-
 		root = user
 	}
 
 	if root == nil {
 		root = &yaml.Node{Kind: yaml.MappingNode, Tag: yamlMappingTag, Content: buildStringNodes("name", "root", "")}
 		users.Content = append(users.Content, root)
+	}
+
+	if root.Kind == yaml.ScalarNode {
+		root.Kind, root.Tag, root.Value = yaml.MappingNode, yamlMappingTag, ""
+		root.Content = buildStringNodes("name", "root", "")
 	}
 
 	return root, nil
