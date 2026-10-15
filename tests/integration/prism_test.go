@@ -58,7 +58,10 @@ type capturedCreate struct {
 func TestPrismBoundary(t *testing.T) {
 	endpoint, client := startFixture(t)
 
-	for _, scenario := range []string{"queues", "429", "500", "malformed", "missing-metadata", missingSubnetScenario} {
+	for _, scenario := range []string{
+		"queues", "429", "500", "malformed", "missing-metadata", missingSubnetScenario,
+		"duplicate-vlan", "duplicate-overlay", "management-ip", "nil-management-ip",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			runScenario(t, client, endpoint, scenario)
 		})
@@ -105,12 +108,28 @@ func runScenario(t *testing.T, client *http.Client, endpoint, scenario string) {
 	requestFixture(t, client, endpoint+"/scenario", `{"scenario":"`+scenario+`"}`)
 
 	nodeDriver := newDriver(t, strings.TrimPrefix(endpoint, "https://"))
+
+	switch scenario {
+	case "management-ip":
+		nodeDriver.Timeout = 2 * fixtureTimeoutSeconds
+	case "nil-management-ip":
+		nodeDriver.Timeout = 1
+	default:
+		// Other scenarios use the fixture's default deadline.
+	}
+
 	if scenario == missingSubnetScenario {
 		nodeDriver.Subnet = append(nodeDriver.Subnet, "absent")
 	}
 
 	err := nodeDriver.Create()
-	assertScenarioError(t, scenario, err)
+	if scenario == "management-ip" {
+		if err != nil || nodeDriver.IPAddress != "10.0.0.10" {
+			t.Fatalf("management subnet selection: IP=%q err=%v", nodeDriver.IPAddress, err)
+		}
+	} else {
+		assertScenarioError(t, scenario, err)
+	}
 
 	var captured capturedCreate
 
@@ -125,7 +144,7 @@ func runScenario(t *testing.T, client *http.Client, endpoint, scenario string) {
 func assertCapturedCreate(t *testing.T, captured capturedCreate, scenario string) {
 	t.Helper()
 
-	if scenario == missingSubnetScenario {
+	if scenario == missingSubnetScenario || strings.HasPrefix(scenario, "duplicate-") {
 		if captured.Creates != 0 {
 			t.Fatalf("partial NIC profile reached create: %d", captured.Creates)
 		}
@@ -241,6 +260,7 @@ func assertScenarioError(t *testing.T, scenario string, err error) {
 	expected := map[string]string{
 		"queues": "task UUID", "429": "429", "500": "500",
 		"missing-metadata": "VM UUID", missingSubnetScenario: "network",
+		"duplicate-vlan": "network", "duplicate-overlay": "network", "nil-management-ip": "deadline exceeded",
 	}
 	if !strings.Contains(err.Error(), expected[scenario]) {
 		t.Fatalf("scenario %s returned unexpected error: %v", scenario, err)

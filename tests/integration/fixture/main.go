@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -18,11 +19,13 @@ type fixture struct {
 	Scenario string          `json:"scenario"`
 	Creates  int             `json:"creates"`
 	Payload  json.RawMessage `json:"payload"`
+	VMReads  int             `json:"vm_reads"` //nolint:tagliatelle // Fixture capture schema.
 }
 
 const (
-	scenarioBodyLimit = 1024
-	payloadBodyLimit  = 1 << 20
+	managementIPScenario = "management-ip"
+	scenarioBodyLimit    = 1024
+	payloadBodyLimit     = 1 << 20
 )
 
 type scenarioInput struct {
@@ -86,6 +89,10 @@ func (f *fixture) serve(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	if f.serveNetworkScenario(writer, request) {
+		return
+	}
+
 	serveLookup(writer, request)
 }
 
@@ -99,7 +106,7 @@ func (f *fixture) setScenario(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	f.Scenario, f.Creates, f.Payload = input.Scenario, 0, nil
+	f.Scenario, f.Creates, f.Payload, f.VMReads = input.Scenario, 0, nil, 0
 }
 
 func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
@@ -115,6 +122,8 @@ func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
 	var response string
 
 	switch f.Scenario {
+	case managementIPScenario, "nil-management-ip":
+		response = `{"metadata":{"uuid":"fixture-vm"},"status":{"execution_context":{"task_uuid":"task"}}}`
 	case "429":
 		writer.WriteHeader(http.StatusTooManyRequests)
 
@@ -132,6 +141,66 @@ func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	writeResponse(writer, []byte(response))
+}
+
+func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http.Request) bool {
+	if request.URL.Path == "/api/nutanix/v3/subnets/list" && strings.HasPrefix(f.Scenario, "duplicate-") {
+		data, err := os.ReadFile("/fixtures/subnets.json")
+		if err != nil {
+			http.Error(writer, "fixture missing", http.StatusInternalServerError)
+
+			return true
+		}
+
+		var inventory struct {
+			Entities []json.RawMessage `json:"entities"`
+		}
+
+		err = json.Unmarshal(data, &inventory)
+		if err != nil {
+			http.Error(writer, "fixture invalid", http.StatusInternalServerError)
+
+			return true
+		}
+
+		index := 0
+		if f.Scenario == "duplicate-overlay" {
+			index = 1
+		}
+
+		inventory.Entities = append(inventory.Entities, inventory.Entities[index])
+
+		err = json.NewEncoder(writer).Encode(inventory)
+		if err != nil {
+			log.Print(err)
+		}
+
+		return true
+	}
+
+	if f.Scenario != managementIPScenario && f.Scenario != "nil-management-ip" {
+		return false
+	}
+
+	switch request.URL.Path {
+	case "/api/nutanix/v3/tasks/task":
+		writeResponse(writer, []byte(`{"status":"SUCCEEDED"}`))
+	case "/api/nutanix/v3/vms/fixture-vm":
+		f.VMReads++
+
+		endpoints := "null"
+		if f.Scenario == managementIPScenario && f.VMReads > 1 {
+			endpoints = `[null,{}, {"ip":"fd00::2"},{"ip":"10.0.0.20"},{"ip":"::ffff:10.0.0.10"}]`
+		}
+
+		writeResponse(writer, []byte(`{"status":{"resources":{"nic_list":[
+			{"subnet_reference":{"uuid":"vlan-id"},"ip_endpoint_list":[{"ip":"10.99.0.1"}]},null,
+			{"subnet_reference":{"uuid":"overlay-id"},"ip_endpoint_list":`+endpoints+`}]}}}`))
+	default:
+		return false
+	}
+
+	return true
 }
 
 func serveLookup(writer http.ResponseWriter, request *http.Request) {
