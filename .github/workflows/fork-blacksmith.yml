@@ -1,0 +1,115 @@
+name: Fork Blacksmith quality
+on:
+  push:
+    branches: [sprint/fork-blacksmith-2026-10-15]
+    paths: [.github/workflows/fork-blacksmith.yml, .github/FORK-CI-CHANGELOG.md]
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Same-repository pull request number
+        required: true
+        default: '1'
+        type: string
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: fork-blacksmith-${{ github.event.pull_request.number || inputs.pr || '1' }}
+  cancel-in-progress: true
+jobs:
+  check:
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 40
+    outputs:
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+    steps:
+      - name: Resolve exact same-repository PR candidate
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr || '1' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/candidate.json"
+          jq -e '.state == "open" and .head.repo.full_name == env.GITHUB_REPOSITORY' "$RUNNER_TEMP/candidate.json"
+          candidate_sha=$(jq -r '.head.sha' "$RUNNER_TEMP/candidate.json")
+          base_sha=$(jq -r '.base.sha' "$RUNNER_TEMP/candidate.json")
+          [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -e '.title | test("^[^\r\n]+$")' "$RUNNER_TEMP/candidate.json"
+          printf 'head_sha=%s\n' "$candidate_sha" >> "$GITHUB_OUTPUT"
+          printf 'CANDIDATE_SHA=%s\nCOMMIT_BASE=%s\n' "$candidate_sha" "$base_sha" >> "$GITHUB_ENV"
+          printf 'GOVERNANCE_TITLE=%s\n' "$(jq -r '.title' "$RUNNER_TEMP/candidate.json")" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify candidate and rootless Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(id -u)" -ne 0
+          podman --version
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          git log --no-merges --format=%s "$COMMIT_BASE..$CANDIDATE_SHA" > "$RUNNER_TEMP/commit-titles.txt"
+          test -s "$RUNNER_TEMP/commit-titles.txt"
+      - name: Run declared Podman quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GOVERNANCE_TITLES="$(cat "$RUNNER_TEMP/commit-titles.txt")"
+          make dev-build lint-build
+          make check integration-build
+      - name: Testcontainers on rootless Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PODMAN_SOCKET="$RUNNER_TEMP/prism-podman.sock"
+          podman system service --time=0 "unix://$PODMAN_SOCKET" > "$RUNNER_TEMP/prism-podman.log" 2>&1 &
+          service_pid=$!
+          trap 'kill "$service_pid"' EXIT
+          for attempt in {1..50}; do
+            if test -S "$PODMAN_SOCKET"; then break; fi
+            sleep 0.1
+          done
+          make integration
+      - name: Upload exact candidate artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docker-machine-driver-nutanix-blacksmith
+          path: build/docker-machine-driver-nutanix
+          if-no-files-found: error
+          retention-days: 7
+
+  status:
+    needs: check
+    if: always() && needs.check.outputs.head_sha != ''
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Report result on candidate SHA without checking out code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.check.outputs.head_sha }}
+          CHECK_RESULT: ${{ needs.check.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          status=error
+          if test "$CHECK_RESULT" = success; then status=success; fi
+          if test "$CHECK_RESULT" = failure; then status=failure; fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$CANDIDATE_SHA" \
+            -f state="$status" -f context='Blacksmith / fork quality' \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -f description='Declared Podman gates on exact same-repository PR candidate' \
+            --jq '{state,context,sha,target_url}'
