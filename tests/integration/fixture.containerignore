@@ -1,0 +1,8 @@
+**
+!build/
+!build/prism-fixture
+!machine/
+!machine/driver/
+!machine/driver/testdata/
+!machine/driver/testdata/queue-payload/
+!machine/driver/testdata/queue-payload/*.json

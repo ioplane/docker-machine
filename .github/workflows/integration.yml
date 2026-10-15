@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [mod-check, test, race, vet, lint, fmt-check, vuln, build]
+        check: [mod-check, test, race, vet, lint, fmt-check, vuln, build, integration-mod-check]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,3 +38,28 @@ jobs:
           path: build/docker-machine-driver-nutanix
           if-no-files-found: error
           retention-days: 7
+
+  testcontainers:
+    name: Testcontainers Prism boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build declared toolchain and disposable Prism fixture
+        run: make dev-build integration-build
+      - name: Run Testcontainers against rootless Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          export PODMAN_SOCKET="${RUNNER_TEMP}/prism-podman.sock"
+          podman system service --time=0 "unix://${PODMAN_SOCKET}" > "${RUNNER_TEMP}/prism-podman.log" 2>&1 &
+          service_pid=$!
+          trap 'kill "$service_pid"' EXIT
+          for attempt in {1..50}; do
+            if test -S "$PODMAN_SOCKET"; then break; fi
+            sleep 0.1
+          done
+          make integration
