@@ -379,10 +379,13 @@ Context7 `/golang/go`, [regexp anchor semantics](https://github.com/golang/go/bl
 Rootless Testcontainers и exact-head CI являются отдельными receipts; merge,
 Rancher registration и live Prism/GPU allocation этим этапом не разрешаются.
 
-Полный существующий `make check` в pinned Podman environment: exit 0;
-driver race/shuffle/atomic — 4.573 s, coverage 81.5%. Root и nested integration
-strict lint — 0 issues; formatter, tidy/verify и совпадение SDK/consumer pins
-успешны. Public utility signatures (3) и точный regexp совпадают с parent.
+Прежний полный `make check` в pinned Podman environment — exit 0. После
+уточнения foreign-PE fixture driver race/shuffle/atomic — 4.425 s, coverage 81.5%.
+Финальные affected checks после test-only констант: GPU/UUID race — 1.128 s;
+root и nested integration strict lint — 0 issues; formatter/governance — exit 0.
+Неизменённые tidy/verify, совпадение SDK/consumer pins, vet/build и vuln gates
+подтверждены прежним полным check; полный gate окончательного SHA ожидает CI.
+Public utility signatures (3) и точный regexp совпадают с parent.
 Govulncheck в обоих modules сообщает 0 symbol/package findings и 1 required-only
 `GO-2026-5932` (`golang.org/x/crypto/openpgp`, fixed version N/A); этот прежний
 residual остаётся в полном quality task, SSH dependency не меняется. Integration
