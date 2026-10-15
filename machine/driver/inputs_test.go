@@ -74,6 +74,9 @@ func TestCloudInitRootMerge(t *testing.T) {
 	t.Parallel()
 
 	for _, input := range []string{
+		"",
+		"#cloud-config",
+		"# comment\n",
 		"nested:\n  users: [{name: nested-user}]\n",
 		"users: [default, root]\n",
 		"users:\n  - name: root\n    shell: /bin/bash\n    sudo: custom-rule\n" +
@@ -84,6 +87,9 @@ func TestCloudInitRootMerge(t *testing.T) {
 			fixture := newPayloadFixture(t, "")
 			nodeDriver := payloadDriver(t, fixture.server, fixtureQueues)
 			nodeDriver.CloudInit = "#cloud-config\n" + input
+			if input == "#cloud-config" {
+				nodeDriver.CloudInit = input
+			}
 
 			err := nodeDriver.Create()
 			if err == nil {
@@ -91,6 +97,10 @@ func TestCloudInitRootMerge(t *testing.T) {
 			}
 
 			data := decodedCloudInitField(t, payloadResources(t, capturedPayload(t, fixture)), "user_data")
+			if !bytes.HasPrefix(data, []byte("#cloud-config\n")) {
+				t.Fatal("cloud-init header lost exact recognition marker")
+			}
+
 			assertMergedRoot(t, data, input)
 
 			// Reusing the merged input must not duplicate root or its bootstrap key.

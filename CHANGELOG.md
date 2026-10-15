@@ -40,6 +40,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Header-only cloud-init retains the exact `#cloud-config` recognition marker after the root SSH key merge.
+
 - The disposable Prism fixture covers duplicate VLAN/VPC subnet names and reordered management NICs with nil endpoints and deterministic IPv4 selection; partial network profiles never reach VM creation.
 
 - Create refuses resubmission while a VM identity is known. Remove validates that identity, observes the exact VM before deletion, returns success for confirmed absence without a DELETE, and requires observed absence after a successful delete task. HTTP 404 and terminal task errors are reconciled through VM readback; no mutation is retried. Durable unknown-outcome recovery still requires allocator and persistence integration.
