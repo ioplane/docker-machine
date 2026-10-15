@@ -11,19 +11,25 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type fixture struct {
 	mu sync.Mutex
 
-	Scenario string          `json:"scenario"`
-	Creates  int             `json:"creates"`
-	Payload  json.RawMessage `json:"payload"`
-	VMReads  int             `json:"vm_reads"` //nolint:tagliatelle // Fixture capture schema.
+	Scenario    string          `json:"scenario"`
+	Creates     int             `json:"creates"`
+	Payload     json.RawMessage `json:"payload"`
+	VMReads     int             `json:"vm_reads"` //nolint:tagliatelle // Fixture capture schema.
+	ClientID    string          `json:"clientId"`
+	Allocations int             `json:"allocations"`
 }
 
 const (
 	managementIPScenario = "management-ip"
+	fixtureVMUUID        = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	crashScenario        = "crash"
+	recoveryScenario     = "recovery"
 	scenarioBodyLimit    = 1024
 	payloadBodyLimit     = 1 << 20
 )
@@ -81,6 +87,16 @@ func (f *fixture) serve(writer http.ResponseWriter, request *http.Request) {
 		}
 
 		return
+	case "/resume":
+		f.Scenario = recoveryScenario
+
+		return
+	}
+
+	if strings.HasPrefix(request.URL.Path, "/api/nutanix/v3/idempotence_identifiers") {
+		f.allocate(writer, request)
+
+		return
 	}
 
 	if request.URL.Path == "/api/nutanix/v3/vms" && request.Method == http.MethodPost {
@@ -89,7 +105,7 @@ func (f *fixture) serve(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	if f.serveNetworkScenario(writer, request) {
+	if f.serveNetworkScenario(writer, request) || f.serveLifecycleScenario(writer, request) {
 		return
 	}
 
@@ -106,7 +122,7 @@ func (f *fixture) setScenario(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	f.Scenario, f.Creates, f.Payload, f.VMReads = input.Scenario, 0, nil, 0
+	f.Scenario, f.Creates, f.Payload, f.VMReads, f.Allocations, f.ClientID = input.Scenario, 0, nil, 0, 0, ""
 }
 
 func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
@@ -122,7 +138,7 @@ func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
 	var response string
 
 	switch f.Scenario {
-	case managementIPScenario, "nil-management-ip":
+	case managementIPScenario, "nil-management-ip", recoveryScenario:
 		response = `{"metadata":{"uuid":"fixture-vm"},"status":{"execution_context":{"task_uuid":"task"}}}`
 	case "429":
 		writer.WriteHeader(http.StatusTooManyRequests)
@@ -132,7 +148,7 @@ func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusInternalServerError)
 
 		response = "{}"
-	case "malformed":
+	case "malformed", crashScenario:
 		response = "{"
 	case "missing-metadata":
 		response = `{"status":{"execution_context":{"task_uuid":"task"}}}`
@@ -140,7 +156,34 @@ func (f *fixture) createVM(writer http.ResponseWriter, request *http.Request) {
 		response = `{"metadata":{"uuid":"fixture-vm"},"status":{"execution_context":{"task_uuid":null}}}`
 	}
 
-	writeResponse(writer, []byte(response))
+	writeResponse(writer, []byte(strings.ReplaceAll(response, "fixture-vm", fixtureVMUUID)))
+}
+
+func (f *fixture) allocate(writer http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodPost {
+		var input map[string]json.RawMessage
+
+		err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, scenarioBodyLimit)).Decode(&input)
+		if err == nil {
+			err = json.Unmarshal(input["client_identifier"], &f.ClientID)
+		}
+
+		if err != nil {
+			http.Error(writer, "invalid allocator request", http.StatusBadRequest)
+
+			return
+		}
+
+		f.Allocations++
+	}
+
+	err := json.NewEncoder(writer).Encode(map[string]any{
+		"client_identifier": f.ClientID, "count": 1, "uuid_list": []string{fixtureVMUUID},
+		"expiration_time": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		log.Print(err)
+	}
 }
 
 func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http.Request) bool {
@@ -188,22 +231,29 @@ func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http
 		return true
 	}
 
-	if f.Scenario != managementIPScenario && f.Scenario != "nil-management-ip" {
+	return false
+}
+
+func (f *fixture) serveLifecycleScenario(writer http.ResponseWriter, request *http.Request) bool {
+	if f.Scenario != managementIPScenario && f.Scenario != "nil-management-ip" &&
+		f.Scenario != crashScenario && f.Scenario != recoveryScenario {
 		return false
 	}
 
 	switch request.URL.Path {
 	case "/api/nutanix/v3/tasks/task":
 		writeResponse(writer, []byte(`{"status":"SUCCEEDED"}`))
-	case "/api/nutanix/v3/vms/fixture-vm":
+	case "/api/nutanix/v3/vms/" + fixtureVMUUID:
 		f.VMReads++
 
 		endpoints := "null"
-		if f.Scenario == managementIPScenario && f.VMReads > 1 {
+		if (f.Scenario == managementIPScenario && f.VMReads > 1) || f.Scenario == recoveryScenario {
 			endpoints = `[null,{}, {"ip":"fd00::2"},{"ip":"10.0.0.20"},{"ip":"::ffff:10.0.0.10"}]`
 		}
 
-		writeResponse(writer, []byte(`{"status":{"resources":{"nic_list":[
+		writeResponse(writer, []byte(`{"metadata":{"uuid":"`+fixtureVMUUID+`"},
+			"spec":{"name":"test","cluster_reference":{"uuid":"cluster-id"}},
+			"status":{"state":"COMPLETE","resources":{"nic_list":[
 			{"subnet_reference":{"uuid":"vlan-id"},"ip_endpoint_list":[{"ip":"10.99.0.1"}]},null,
 			{"subnet_reference":{"uuid":"overlay-id"},"ip_endpoint_list":`+endpoints+`}]}}}`))
 	default:

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nutanix/docker-machine/machine/driver"
@@ -76,8 +77,8 @@ func TestCreateQueuePayload(t *testing.T) {
 			assertCorePayload(t, payload)
 			assertDefaultCloudInit(t, payloadResources(t, payload))
 
-			if calls := fixture.calls.Load(); calls != 4 {
-				t.Errorf("create fixture received %d API calls, want three lookups and one create", calls)
+			if calls := fixture.calls.Load(); calls != 5 {
+				t.Errorf("create fixture received %d API calls, want three lookups, allocator and create", calls)
 			}
 		})
 	}
@@ -183,6 +184,24 @@ func servePayloadFixture(t *testing.T, requests chan<- createPayload, responses 
 	}
 
 	writer.Header().Set("Content-Type", "application/json")
+
+	if request.URL.Path == "/api/nutanix/v3/idempotence_identifiers" {
+		var input map[string]any
+
+		err := json.NewDecoder(request.Body).Decode(&input)
+		if err != nil {
+			t.Error(err)
+
+			return
+		}
+
+		writeRemovalResponse(t, writer, map[string]any{
+			"client_identifier": input["client_identifier"], "count": 1,
+			"uuid_list": []string{durableVMUUID}, "expiration_time": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		})
+
+		return
+	}
 
 	if request.URL.Path == "/api/nutanix/v3/vms" {
 		captureCreatePayload(t, requests, writer, request)
@@ -477,7 +496,7 @@ func TestCreateAcceptedIdentityRetained(t *testing.T) {
 		t.Fatal("accepted missing task")
 	}
 
-	if nodeDriver.VMId != "fixture-vm" {
+	if nodeDriver.VMId != durableVMUUID {
 		t.Fatalf("accepted identity lost: VMId=%q", nodeDriver.VMId)
 	}
 }
