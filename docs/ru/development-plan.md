@@ -47,8 +47,8 @@ semantics подтверждать для каждого endpoint/version. По�
 Auth/body replay, concurrent cache и v4 terminal states проверять адресно.
 
 Go tools, exact images/dependencies, readonly/tidy/verify, race/shuffle/atomic,
-vet и whole graph govulncheck выполнять в Podman. Full SDK lint/fuzz/module
-inventory остаются отдельной первой wave. Testcontainers проверяет HTTP boundary,
+vet и whole graph govulncheck выполнять в Podman. Full SDK strict lint/fuzz
+остаются W1; compiler/module inventory W0 включает nested nusights. Testcontainers проверяет HTTP boundary,
 не полную семантику Prism. Performance измерять по одинаковым fixtures и input:
 request/TLS/auth counts, allocations, bytes, memory/FD/goroutines и latency.
 
@@ -75,3 +75,7 @@ fixtures не выводится. Compiler/module/API inventory собирает
 `go list -export -compiled -deps -test -json`, `go list -m -json all` и
 `go doc -all` отдельно для каждого Go module. Числа и границы измерения
 публикуются в каноническом плане um-docs; полные исходные результаты локальны.
+
+[Датированный W0 baseline: compiler/API inputs, fixtures и распределения](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/baseline-2026-10-15.md).
+Root `./...` не охватывает nested modules. В SDK nusights имеет отдельный
+module-level vulnerability gate; runtime pin driver в W0 не меняется.
