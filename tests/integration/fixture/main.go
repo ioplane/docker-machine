@@ -164,11 +164,18 @@ func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http
 		}
 
 		index := 0
+		identity := "vlan-id"
+
 		if f.Scenario == "duplicate-overlay" {
 			index = 1
+			identity = "overlay-id"
+			inventory.Entities[index] = json.RawMessage(strings.ReplaceAll(string(inventory.Entities[index]),
+				`"subnet_type":"OVERLAY"`, `"subnet_type":"OVERLAY","vpc_reference":{"uuid":"first-vpc"}`))
 		}
 
-		inventory.Entities = append(inventory.Entities, inventory.Entities[index])
+		duplicate := strings.ReplaceAll(string(inventory.Entities[index]), identity, "duplicate-"+identity)
+		duplicate = strings.ReplaceAll(duplicate, "first-vpc", "second-vpc")
+		inventory.Entities = append(inventory.Entities, json.RawMessage(duplicate))
 
 		err = json.NewEncoder(writer).Encode(inventory)
 		if err != nil {
