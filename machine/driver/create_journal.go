@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -248,9 +250,9 @@ func syncJournalDirectory(root *os.Root, path string) error {
 
 // Only the digest is persisted; credentials and raw cloud-init never enter the journal.
 func (d *NutanixDriver) createBinding() (string, error) {
-	publicKey, err := os.ReadFile(d.GetSSHKeyPath() + ".pub")
+	publicKey, err := d.bootstrapIdentity()
 	if err != nil {
-		return "", fmt.Errorf("read bootstrap identity for Create journal: %w", err)
+		return "", err
 	}
 
 	keyDigest := sha256.Sum256(publicKey)
@@ -275,4 +277,33 @@ func (d *NutanixDriver) createBinding() (string, error) {
 	digest := sha256.Sum256(data)
 
 	return hex.EncodeToString(digest[:]), nil
+}
+
+// Validate usable bootstrap credentials before journal adoption or a remote operation.
+func (d *NutanixDriver) bootstrapIdentity() ([]byte, error) {
+	privateKey, err := os.ReadFile(d.GetSSHKeyPath())
+	if err != nil {
+		return nil, fmt.Errorf("read bootstrap private key: %w", err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid bootstrap private key", errCreateRecovery)
+	}
+
+	publicKey, err := os.ReadFile(d.GetSSHKeyPath() + ".pub")
+	if err != nil {
+		return nil, fmt.Errorf("read bootstrap public key: %w", err)
+	}
+
+	parsed, _, options, rest, err := ssh.ParseAuthorizedKey(publicKey)
+	if err != nil || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return nil, fmt.Errorf("%w: invalid bootstrap public key", errCreateRecovery)
+	}
+
+	if !bytes.Equal(signer.PublicKey().Marshal(), parsed.Marshal()) {
+		return nil, fmt.Errorf("%w: bootstrap SSH key pair mismatch", errCreateRecovery)
+	}
+
+	return publicKey, nil
 }

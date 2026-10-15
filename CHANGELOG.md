@@ -42,6 +42,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - PreCreateCheck reserves VM identity and bootstrap files before the consumer archives its machine directory. An independent per-machine journal recovers interrupted allocation by its stable client ID; VM response loss and restored checkpoints reconcile only the reserved UUID, without replaying an unknown VM POST or deleting a VM for a missing IP. Linux file locks serialize operations; corrupt, unsafe or mismatched journals fail closed. Breaking: operations require a durable or restored local Linux machine store, and preparation requires access to the Prism v3 idempotence allocator; there is no unsafe fallback. The consumer RPC/config format and legacy VMId removal remain compatible; automatic Rancher CLI resume is a separate consumer stage.
 
+- Create preparation and reconciliation validate the bootstrap private/public SSH key pair before API access; missing, corrupt or mismatched credentials fail closed without exposing key material.
 - Header-only cloud-init retains the exact `#cloud-config` recognition marker after the root SSH key merge.
 
 - The disposable Prism fixture covers duplicate VLAN/VPC subnet names and reordered management NICs with nil endpoints and deterministic IPv4 selection; partial network profiles never reach VM creation.

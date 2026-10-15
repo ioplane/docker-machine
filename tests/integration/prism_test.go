@@ -2,8 +2,11 @@ package integration_test
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net"
@@ -239,8 +242,13 @@ func newDriver(t *testing.T, endpoint string) *driver.NutanixDriver {
 		t.Fatal(err)
 	}
 
-	for _, suffix := range []string{"", ".pub"} {
-		writeErr := os.WriteFile(nodeDriver.SSHKeyPath+suffix, []byte("fixture-placeholder"), fixtureKeyMode)
+	keys := map[string][]byte{
+		"":     fixturePrivateKey(t),
+		".pub": []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtqJ7zOtqQtYqOo0CpvDXNlMhV3HeJDpjrASKGLWdop\n"),
+	}
+
+	for suffix, contents := range keys {
+		writeErr := os.WriteFile(nodeDriver.SSHKeyPath+suffix, contents, fixtureKeyMode)
 		if writeErr != nil {
 			t.Fatal(writeErr)
 		}
@@ -274,4 +282,18 @@ func assertScenarioError(t *testing.T, scenario string, err error) {
 	if !strings.Contains(err.Error(), expected[scenario]) {
 		t.Fatalf("scenario %s returned unexpected error: %v", scenario, err)
 	}
+}
+
+// Fixed seeds generate disposable identities without committing private key material.
+func fixturePrivateKey(t *testing.T) []byte {
+	t.Helper()
+
+	key := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+
+	data, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Headers: nil, Bytes: data})
 }
