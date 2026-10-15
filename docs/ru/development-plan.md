@@ -1,4 +1,4 @@
-# Nutanix node driver: план модернизации v4
+# Nutanix node driver: план модернизации v7
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
@@ -168,3 +168,25 @@ Upload builders читают текущий диапазон caller-owned regula
 сохраняет свой defer Close. Новых retries, API fields и queue payload изменений нет.
 Этап 4.8.7 остаётся in_progress: session refresh/cancellation и cache ещё открыты.
 Полный SDK strict quality остаётся отдельным W2/rank90; новых driver tests нет.
+
+
+## Session SDK pin: этап v7
+
+Driver использует SDK `9bf301c039097f55ddfc5dddd8b15c03694b2ba8`, module
+`v0.8.3-0.20261015112743-9bf301c03909`, разрешённый через go list/GH API.
+Общий v3/Konnector HTTP client синхронизирует session cookies, разделяет один
+refresh между одновременными401 одной session version и применяет одинаковый
+single-replay contract в Do и DoWithFilters. Отдельный ожидающий может отменить
+context; общий refresh ограничен context владельца. Non-replayable body,
+transport errors с неизвестным результатом и auth/GetBody errors повтор ресурса
+не запускают. Headers вызывающего кода сохраняются, исходные response bodies
+закрываются по одному разу. Driver basic/API-key путь, RPC/config и queue JSON
+не меняются; session auth не включается принудительно.
+
+Критичные regressions находятся в SDK:8 concurrent requests/2auth/16resource
+calls, replay bytes, cancellation, single retry, errors и body ownership.
+Новых driver tests/dependencies/tools нет. Действующие driver make check,
+strict lint, RPC и rootless Testcontainers выполняются на текущем consumer pin.
+Constructor context, v3/v4 concurrent cache, общий deadline и operation reconcile
+остаются открыты; um-docs-nrsu.4.8.7 не закрывается по этому подэтапу. Нет
+merge/release/Rancher registration или live provision/performance acceptance.
