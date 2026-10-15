@@ -2,6 +2,7 @@ name: Integration
 on:
   push:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   workflow_call:
 permissions:
   contents: read
@@ -63,3 +64,27 @@ jobs:
             sleep 0.1
           done
           make integration
+
+  governance:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/')
+    name: Fork contribution governance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build declared development image
+        run: make dev-build
+      - name: Check new commit titles, PR title and changelog
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          COMMIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          COMMIT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export GOVERNANCE_TITLE="deliberately invalid title"
+          export GOVERNANCE_TITLES="$(git log --no-merges --format=%s "$COMMIT_BASE..$COMMIT_HEAD")"
+          test -n "$GOVERNANCE_TITLES"
+          make governance
