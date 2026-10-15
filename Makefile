@@ -66,7 +66,14 @@ release-check:
 release:
 	$(RELEASE_RUN) --env GITHUB_TOKEN $(RELEASE_IMAGE) sh -ec 'cd machine; goreleaser release --clean'
 
-check: governance mod-check test race vet lint fmt-check vuln build integration-mod-check integration-quality
+check: governance mod-check test race benchmark-check vet lint fmt-check vuln build integration-mod-check integration-quality
+
+.PHONY: benchmark-check benchmark
+benchmark-check:
+	$(DEV_RUN) go test -race -run '^$$' -bench '^BenchmarkQueue' -benchtime=2x ./machine/driver
+
+benchmark:
+	$(DEV_RUN) go test -cpu=4 -run '^$$' -bench '^BenchmarkQueue' -benchmem -benchtime=100ms -count=5 ./machine/driver
 
 # Testcontainers uses an unprivileged Podman service, never the host root socket.
 PODMAN_SOCKET ?= $(XDG_RUNTIME_DIR)/podman/podman.sock
