@@ -16,6 +16,7 @@ linters:
       rules:
         project:
           list-mode: strict
+          files: ["!**/tests/integration/**"]
           allow:
             - $gostd
             - github.com/nutanix/docker-machine
@@ -24,6 +25,13 @@ linters:
             - github.com/nutanix-cloud-native/prism-go-client
             - github.com/sirupsen/logrus
             - go.yaml.in/yaml/v3
+        integration:
+          list-mode: strict
+          files: ["**/tests/integration/**"]
+          allow:
+            - $gostd
+            - github.com/nutanix/docker-machine
+            - github.com/testcontainers/testcontainers-go
     errcheck:
       check-type-assertions: true
       check-blank: true
@@ -38,7 +46,9 @@ linters:
         - 'go.yaml.in/yaml/v3.Node'
         - 'net/url.URL'
     gomoddirectives:
+      replace-local: true # Isolated integration module imports the exact local driver under test.
       replace-allow-list:
+        - github.com/nutanix/docker-machine # Local integration module only.
         - github.com/urfave/cli # Rancher RPC-compatible CLI implementation.
         - github.com/nutanix-cloud-native/prism-go-client # Isolated transport security fix.
     gocritic:
