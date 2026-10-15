@@ -28,3 +28,5 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Missing task UUID returns an error; malformed cloud-init returns an error
   instead of terminating the driver. Diagnostic helpers omit credentials and
   request/response payloads.
+- Development checks use the default rootless Podman mapping, avoiding the
+  failing nested `keep-id:uid=0,gid=0` mapping on GitHub-hosted runners.
