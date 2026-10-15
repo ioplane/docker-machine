@@ -4,10 +4,11 @@
 
 The ioplane fork follows [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
 and [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
-Use English declarative noun phrases for new commit titles:
-`fix(http): sanitized response diagnostics`. PR titles and descriptions follow
-the review language convention (technical Russian). Inherited commit titles
-remain accepted; published history is not rewritten. Allowed types are `build`, `chore`, `ci`,
+Use English for all new commit messages, including bodies and footers.
+Use declarative noun phrases for commit titles:
+`fix(http): sanitized response diagnostics`. PR titles and descriptions use English. Inherited commit titles
+remain accepted. Published history is preserved unless the owner explicitly
+authorizes a bounded message-only rewrite with backup references. Allowed types are `build`, `chore`, `ci`,
 `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
 Mark incompatible public API or minimum-toolchain changes with `!` and document
 consumer migration in CHANGELOG and the compatibility contract.

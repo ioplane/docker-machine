@@ -29,9 +29,11 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Fork pull request titles and descriptions and new commit messages use English; commit titles retain declarative Conventional Commits.
+
 - The pinned Prism SDK bounds decoded/filtered network JSON to 64 MiB and error bodies to 64 KiB. ResponseError status/cause classification replaces server-message matching; unfiltered io.Writer stays streaming. Large inventories require pagination.
 
-- New commit titles use English declarative noun phrases; PR review language and inherited commit history remain unchanged.
+- New commit titles use English declarative noun phrases; owner-authorized message-only history rewrites preserve source trees and backup references.
 
 - Go toolchain and dependencies refreshed; maintained Rancher Machine replaces
   archived Docker Machine while preserving the operational driver name and JSON
