@@ -40,6 +40,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The immutable Prism SDK pin includes independent upload replay readers and correct remaining Content-Length; caller-owned regular files stay open across redirects. VM queue payloads and driver RPC/config fields are unchanged.
+
 - Create rejects invalid CPU/RAM and overflowing or negative disk sizes before Prism requests, including restored state with omitted queues. Cloud-init merges only top-level users, preserves existing root settings and keys, and rejects ambiguous YAML without disclosing userdata.
 
 - Requested Nutanix timeout is read before the 300-second minimum clamp, preserving custom values on a fresh driver and clamping low values after prior configuration.

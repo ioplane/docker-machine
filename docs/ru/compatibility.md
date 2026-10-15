@@ -37,8 +37,8 @@ RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после норм�
 ## Prism SDK и JSON API
 
 База Prism SDK — стабильная версия `v0.8.2`. В `go.mod` закреплён fork
-`github.com/ioplane/prism-go-client v0.8.3-0.20261015100321-6ee1b0d01b4e`,
-commit `6ee1b0d01b4e362ee4c929a77893ac7810b81a48`,
+`github.com/ioplane/prism-go-client v0.8.3-0.20261015110003-e7f87ddb90ec`,
+commit `e7f87ddb90ec2631d0cbe7ba3936c3e90946cf5b`,
 [PR #1](https://github.com/ioplane/prism-go-client/pull/1).
 Это исправление поверх `v0.8.2`, а не опубликованный upstream release `v0.8.3`.
 Причина: upstream SDK изменяет общий `http.DefaultTransport` при создании клиента.
@@ -115,3 +115,14 @@ alias/merge в изменяемых узлах и неверная форма ro
 Переход: заменить alias/merge для root/users/SSH keys явными узлами и устранить
 дубли/неверные числовые значения. Ранее такие inputs могли дойти до API;
 теперь возвращается ошибка до запроса. SDK pin и queue payload не меняются.
+
+
+## Upload dependency: этап v6
+
+Текущий immutable pin — SDK `e7f87ddb90ec2631d0cbe7ba3936c3e90946cf5b`,
+`v0.8.3-0.20261015110003-e7f87ddb90ec`. HTTP budgets/errors из v4 сохраняются;
+дополнительно исправлено владение file upload body и независимость replay.
+Public entry points, driver RPC/JSON и VM NIC queues сохраняются. Low-level
+upload callers должны держать regular file открытым и неизменным до завершения
+запроса/повторов; EOF даёт пустой body, pipe/device/directory отклоняются.
+Go API/wire совместимость не является утверждением о binary ABI или live Prism.
