@@ -1,0 +1,2 @@
+# Inherited release headers; new releases require dated SemVer headings.
+

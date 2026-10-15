@@ -12,7 +12,7 @@ PODMAN_RUN = $(PODMAN) run --rm \
 	-v "$(CURDIR):/src:z" -w /src \
 	-v ioplane-nutanix-driver-go-modules:/cache/modules \
 	-v ioplane-nutanix-driver-go-build:/cache/build
-DEV_RUN = $(PODMAN_RUN) $(DEV_IMAGE)
+DEV_RUN = $(PODMAN_RUN) --env GOVERNANCE_TITLE --env GOVERNANCE_TITLES $(DEV_IMAGE)
 RELEASE_RUN = $(PODMAN_RUN) -v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro,z" \
 	--env GIT_DIR=$(GIT_DIR) --env GIT_WORK_TREE=/src
 .PHONY: dev-build lint-build release-build build local test race vet lint fmt-check vuln tidy mod-check deps release-check release check
@@ -42,10 +42,10 @@ vet:
 	$(DEV_RUN) go vet ./...
 
 lint:
-	$(PODMAN_RUN) $(LINT_IMAGE) golangci-lint run --timeout=5m ./...
+	$(PODMAN_RUN) $(LINT_IMAGE) golangci-lint run --timeout=5m ./... ./.ci
 
 fmt-check:
-	$(PODMAN_RUN) $(LINT_IMAGE) sh -ec 'golangci-lint fmt --diff > /tmp/format.patch; if test -s /tmp/format.patch; then cat /tmp/format.patch; exit 1; fi'
+	$(PODMAN_RUN) $(LINT_IMAGE) sh -ec 'golangci-lint fmt --diff > /tmp/format.patch; golangci-lint fmt --diff .ci >> /tmp/format.patch; if test -s /tmp/format.patch; then cat /tmp/format.patch; exit 1; fi'
 
 vuln:
 	$(DEV_RUN) go tool govulncheck ./...
@@ -66,7 +66,7 @@ release-check:
 release:
 	$(RELEASE_RUN) --env GITHUB_TOKEN $(RELEASE_IMAGE) sh -ec 'cd machine; goreleaser release --clean'
 
-check: mod-check test race vet lint fmt-check vuln build integration-mod-check integration-quality
+check: governance mod-check test race vet lint fmt-check vuln build integration-mod-check integration-quality
 
 # Testcontainers uses an unprivileged Podman service, never the host root socket.
 PODMAN_SOCKET ?= $(XDG_RUNTIME_DIR)/podman/podman.sock
@@ -88,7 +88,13 @@ integration:
 .PHONY: integration-build integration-mod-check integration
 
 integration-quality:
-	$(PODMAN_RUN) -w /src/tests/integration $(LINT_IMAGE) sh -ec 'golangci-lint run --timeout=5m ./...; golangci-lint fmt --diff > /tmp/integration-format.patch; test ! -s /tmp/integration-format.patch || { cat /tmp/integration-format.patch; exit 1; }'
+	$(PODMAN_RUN) -w /src/tests/integration $(LINT_IMAGE) sh -ec 'golangci-lint run --timeout=5m ./... ./.ci; golangci-lint fmt --diff > /tmp/integration-format.patch; test ! -s /tmp/integration-format.patch || { cat /tmp/integration-format.patch; exit 1; }'
 	$(DEV_RUN) go tool govulncheck -C tests/integration -test ./...
 
 .PHONY: integration-quality
+
+.PHONY: governance
+governance:
+	$(DEV_RUN) go test -race ./.ci
+	$(DEV_RUN) go vet ./.ci
+	$(DEV_RUN) go run ./.ci
