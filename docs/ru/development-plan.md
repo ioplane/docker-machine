@@ -93,8 +93,8 @@ checks. Новые тесты добавлять только для крити�
 Текущий batch: timeout считывается из запроса до minimum clamp; SDK filter
 отклоняет nil filter, отсутствующий/null/non-array entities и non-object element
 с ошибкой вместо panic. Корректные filter payload и optional queue/RPC JSON
-контракты сохраняются. Остальная валидация YAML/hardware, bounded response
-bodies и безопасная диагностика остаются открыты в Beads; этот batch их не закрывает.
+контракты сохраняются. HTTP продолжен этапом v4 ниже; YAML/hardware — этапом
+v5. Статусы review/delivery и оставшаяся программа ведутся в Beads.
 
 Go release notes проверены через GitHub API
 [`golang/website` — Go 1.27](https://go.dev/doc/go1.27), source blob
@@ -129,5 +129,30 @@ ResponseError.StatusCode и errors.Is/As заменяют server-message matchin
 Изменение SDK помечено breaking; wire/RPC/config поля driver сохраняются.
 Текущие consumer/RPC/Testcontainers gates проверяют новый pin. Новых driver
 features, tests, dependencies tools и performance campaigns для pin нет.
-Следующий runtime scope — оставшиеся YAML/hardware inputs, auth/replay/deadline;
+Следующий runtime scope после input batch v5 — auth/replay/deadline;
 merge/release/live acceptance остаются отдельными gates.
+
+## Входные данные: этап v5
+
+`um-docs-nrsu.4.8.4`, P1/C2: hardware validation охватывает CLI и восстановленный
+Create state независимо от queues; int64 conversions проверяются до умножения.
+Cloud-init вынесен в `machine/driver/cloudinit.go` внутри существующего package;
+рекурсивный поиск users заменён прямым mapping lookup, root merge повторяем.
+Невалидный YAML/hardware input не достигает Prism. Новых dependencies,
+frameworks, exported API или queue flags нет; критичные regressions используют
+прежний TLS fixture. Полная schema/guest/canary приёмка остаётся отдельным этапом.
+
+Источники: Context7 `/yaml/go-yaml` и `/canonical/cloud-init`, точный
+[yaml.v3 source](https://github.com/yaml/go-yaml/blob/e16c7af9361b241fa02d91582fb59ce4954d8afc/decode.go#L484)
+и [Decoder](https://github.com/yaml/go-yaml/blob/e16c7af9361b241fa02d91582fb59ce4954d8afc/yaml.go#L120),
+[cloud-init users](https://github.com/canonical/cloud-init/blob/main/doc/rtd/reference/yaml_examples/user_groups.rst).
+GH GraphQL подтвердил v3.0.5 tag; published GitHub Release отсутствует,
+compare v3.0.4...v3.0.5 изучен. API новой yaml main (`WithUniqueKeys`) не
+переносится в установленный v3: Node bypasses mapping decode validation.
+Go 1.27 release notes повторно сверены через GH GraphQL, source blob
+`2d38a2be7836deca1d17451c6e03dd444f282847`; generic methods не нужны для
+этого исправления. Аппаратные vendor limits и guest compatibility не измерены.
+
+Следующая очередь: review/delivery input и HTTP patches, затем auth/replay и
+общий deadline по существующим Beads prerequisites; далее NIC/IP identity и
+operation reconcile. Full SDK stylistic quality остаётся отдельным W2/rank90.

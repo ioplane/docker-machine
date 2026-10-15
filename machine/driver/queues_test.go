@@ -38,6 +38,8 @@ func (queueOptions) StringSlice(key string) []string {
 
 func (o queueOptions) Int(key string) int {
 	switch key {
+	case "nutanix-vm-mem":
+		return fixtureMemoryMiB
 	case "nutanix-vm-cpus":
 		return o.sockets
 	case "nutanix-vm-cores":

@@ -21,7 +21,6 @@ import (
 	"github.com/rancher/machine/libmachine/ssh"
 	"github.com/rancher/machine/libmachine/state"
 	log "github.com/sirupsen/logrus"
-	"go.yaml.in/yaml/v3"
 
 	client "github.com/nutanix-cloud-native/prism-go-client"
 	prismv3 "github.com/nutanix-cloud-native/prism-go-client/v3"
@@ -44,7 +43,7 @@ var (
 	errEmptyImage            = errors.New("nutanix-vm-image cannot be empty")
 	errInvalidQueues         = errors.New("nutanix-vm-nic-queues must be a positive decimal integer")
 	errQueuesOverflow        = errors.New("nutanix-vm-nic-queues must be a positive decimal integer within int64 range")
-	errQueueCPUConfiguration = errors.New("nutanix-vm-nic-queues requires a positive CPU topology within int64 range")
+	errQueueCPUConfiguration = errors.New("CPU sockets and cores must be positive with product within int64 range")
 	errQueuesExceedCPU       = errors.New("nutanix-vm-nic-queues cannot exceed nutanix-vm-cpus * nutanix-vm-cores")
 )
 
@@ -115,12 +114,15 @@ func NewDriver(hostname, storePath string) *NutanixDriver {
 
 // Create a host using the driver's config.
 func (d *NutanixDriver) Create() error {
-	_, err := d.nicQueues()
+	err := d.validateHardware()
 	if err != nil {
 		return fmt.Errorf(driverOperationFormat, err)
 	}
 
-	name := d.GetMachineName()
+	customization, err := d.guestCustomization()
+	if err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 
@@ -132,7 +134,7 @@ func (d *NutanixDriver) Create() error {
 	// Prepare VM creation request
 	res := d.initialResources()
 	metadata := &prismv3.Metadata{Kind: new("vm")}
-	spec := &prismv3.VM{Name: new(name), Description: new(d.Description), Resources: res}
+	spec := &prismv3.VM{Name: new(d.GetMachineName()), Description: new(d.Description), Resources: res}
 
 	err = d.assignProject(ctx, conn, metadata)
 	if err != nil {
@@ -168,10 +170,7 @@ func (d *NutanixDriver) Create() error {
 		return err
 	}
 
-	res.GuestCustomization, err = d.guestCustomization()
-	if err != nil {
-		return err
-	}
+	res.GuestCustomization = customization
 
 	request := &prismv3.VMIntentInput{Metadata: metadata, Spec: spec}
 
@@ -445,7 +444,7 @@ func (d *NutanixDriver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 
 	d.setDescription(opts.String("nutanix-vm-description"))
 
-	return nil
+	return d.validateHardware()
 }
 
 // Start a host.
@@ -781,7 +780,7 @@ func (d *NutanixDriver) addImage(ctx context.Context, conn *prismv3.Client, res 
 			}
 
 			if d.ImageSize > 0 {
-				newSize := int64(d.ImageSize * mibPerGiB)
+				newSize := int64(d.ImageSize) * mibPerGiB
 				n := &prismv3.VMDisk{
 					DataSourceReference: utils.BuildReference(*image.Metadata.UUID, "image"),
 					DiskSizeMib:         &newSize,
@@ -805,60 +804,6 @@ func (d *NutanixDriver) addImage(ctx context.Context, conn *prismv3.Client, res 
 	}
 
 	return nil
-}
-
-func (d *NutanixDriver) cloudInitUserData(pubKey []byte) ([]byte, error) {
-	defaultData := []byte("#cloud-config\r\nusers:\r\n - name: root\r\n   ssh_authorized_keys:\r\n    - " + string(pubKey))
-	if d.CloudInit == "" {
-		return defaultData, nil
-	}
-
-	document := yaml.Node{Kind: yaml.DocumentNode, HeadComment: "cloud-config"}
-
-	if !strings.HasPrefix(d.CloudInit, "#cloud-config") {
-		return nil, errCloudInitSyntax
-	}
-
-	r1 := strings.ReplaceAll(d.CloudInit, "\\n", "\n")
-	r2 := strings.ReplaceAll(r1, "\\r", "\r")
-
-	err := yaml.Unmarshal([]byte(r2), &document)
-	if err != nil {
-		return nil, fmt.Errorf(driverOperationFormat, err)
-	}
-
-	if document.Content == nil {
-		return defaultData, nil
-	}
-
-	log.Infof("Cloud-init merge")
-
-	usersNode := iterateNode(&document, "users")
-
-	if usersNode == nil {
-		rootNode := document.Content[0]
-		rootNode.Content = append(rootNode.Content, buildScalarNodes("users")...)
-		usersNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		rootNode.Content = append(rootNode.Content, usersNode)
-	}
-
-	rancherNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	rancherNode.Content = append(rancherNode.Content, buildStringNodes("name", "root", "")...)
-	rancherNode.Content = append(rancherNode.Content, buildStringNodes("sudo", "ALL=(ALL) NOPASSWD:ALL", "")...)
-	rancherNode.Content = append(rancherNode.Content, buildScalarNodes("ssh_authorized_keys")...)
-
-	sshSeqNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	sshSeqNode.Content = append(sshSeqNode.Content, buildScalarNodes(string(pubKey))...)
-
-	rancherNode.Content = append(rancherNode.Content, sshSeqNode)
-	usersNode.Content = append(usersNode.Content, rancherNode)
-
-	userdata, err := yaml.Marshal(&document)
-	if err != nil {
-		return nil, fmt.Errorf("marshal cloud-init: %w", err)
-	}
-
-	return userdata, nil
 }
 
 func (d *NutanixDriver) credentials() client.Credentials {
@@ -1028,6 +973,29 @@ func (d *NutanixDriver) waitForCreateTask(ctx context.Context, conn *prismv3.Cli
 	}
 
 	return nil
+}
+
+func (d *NutanixDriver) validateHardware() error {
+	_, err := d.queueCPUCount()
+	if err != nil {
+		return err
+	}
+
+	if d.VMMem < 1 {
+		return fmt.Errorf("%w: nutanix-vm-mem must be positive", errDriverConfiguration)
+	}
+
+	if d.ImageSize < 0 || int64(d.ImageSize) > math.MaxInt64/mibPerGiB {
+		return fmt.Errorf("%w: nutanix-vm-image-size exceeds the nonnegative int64 MiB range", errDriverConfiguration)
+	}
+
+	if d.DiskSize < 0 || int64(d.DiskSize) > math.MaxInt64/bytesPerGiB {
+		return fmt.Errorf("%w: nutanix-disk-size exceeds the nonnegative int64 byte range", errDriverConfiguration)
+	}
+
+	_, err = d.nicQueues()
+
+	return err
 }
 
 func (d *NutanixDriver) queueCPUCount() (int64, error) {

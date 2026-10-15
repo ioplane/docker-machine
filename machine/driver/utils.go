@@ -26,31 +26,6 @@ func isUUID(uuid string) bool {
 	return uuidPattern.MatchString(uuid)
 }
 
-func iterateNode(node *yaml.Node, identifier string) *yaml.Node {
-	returnNode := false
-
-	for _, child := range node.Content {
-		if child.Value == identifier {
-			returnNode = true
-
-			continue
-		}
-
-		if returnNode {
-			return child
-		}
-
-		if len(child.Content) > 0 {
-			matchingNode := iterateNode(child, identifier)
-			if matchingNode != nil {
-				return matchingNode
-			}
-		}
-	}
-
-	return nil
-}
-
 // deleteAllContents will remove all the contents of a node
 // Mark sure to pass the correct node in otherwise bad things will happen
 // func deleteAllContents(node *yaml.Node) {

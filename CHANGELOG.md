@@ -40,6 +40,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Create rejects invalid CPU/RAM and overflowing or negative disk sizes before Prism requests, including restored state with omitted queues. Cloud-init merges only top-level users, preserves existing root settings and keys, and rejects ambiguous YAML without disclosing userdata.
+
 - Requested Nutanix timeout is read before the 300-second minimum clamp, preserving custom values on a fresh driver and clamping low values after prior configuration.
 
 - Malformed create metadata returns an error; an accepted VM identity survives
