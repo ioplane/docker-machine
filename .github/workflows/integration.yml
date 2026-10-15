@@ -1,73 +1,40 @@
 name: Integration
-
 on:
   push:
   pull_request:
-
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
-    name: Check
-    runs-on: ubuntu-latest
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [mod-check, test, race, vet, lint, fmt-check, vuln, build]
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: go.mod
-
-      - name: Lint Go Code
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          staticcheck ./...
-
-  vet:
-    name: Vet
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+          persist-credentials: false
+      - name: Verify container runtime
+        run: podman --version
+      - name: Build declared development image
+        run: make dev-build
+      - name: Build pinned lint image
+        if: matrix.check == 'lint' || matrix.check == 'fmt-check'
+        run: make lint-build
+      - name: Run blocking check in Podman
+        run: make "${{ matrix.check }}"
+      - name: Upload driver
+        if: matrix.check == 'build'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          go-version-file: go.mod
-
-      - name: Vet Go code
-        run: go vet ./...
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-        
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Compile
-        run: go build -v -o build/docker-machine-driver-nutanix machine/main.go
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0
-        env:
-           TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db,public.ecr.aws/aquasecurity/trivy-db"
-        with:
-          scan-type: "fs"
-          ignore-unfixed: true
-          format: "table"
-          exit-code: "1"
-          vuln-type: "os,library"
-          severity: "CRITICAL,HIGH"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          # Artifact name
           name: docker-machine-driver-nutanix
-          # Directory containing files to upload
           path: build/docker-machine-driver-nutanix
+          if-no-files-found: error
+          retention-days: 7

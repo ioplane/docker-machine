@@ -1,0 +1,16 @@
+{
+  "metadata": {"kind": "vm"},
+  "spec": {
+    "name": "test",
+    "description": "offline payload fixture",
+    "cluster_reference": {"kind": "cluster", "uuid": "cluster-id"}
+  },
+  "resources": {
+    "power_state": "ON",
+    "memory_size_mib": 2048,
+    "num_sockets": 2,
+    "num_vcpus_per_socket": 2,
+    "boot_config": {"boot_type": "LEGACY", "boot_device_order_list": ["DISK"]},
+    "disk_list": [{"data_source_reference": {"kind": "image", "uuid": "image-id"}}]
+  }
+}

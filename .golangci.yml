@@ -1,0 +1,112 @@
+version: "2"
+
+run:
+  timeout: 10m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: all
+  disable:
+    - wsl # Deprecated predecessor of wsl_v5.
+    - exhaustruct # Superseded by exhaustruct_v5.
+    - gomodguard # Superseded by gomodguard_v2.
+  settings:
+    depguard:
+      rules:
+        project:
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/nutanix/docker-machine
+            - github.com/rancher/machine
+            - github.com/google/uuid
+            - github.com/nutanix-cloud-native/prism-go-client
+            - github.com/sirupsen/logrus
+            - go.yaml.in/yaml/v3
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      disable-default-exclusions: true
+    exhaustruct_v5:
+      # SDK intents, driver state, flags and YAML nodes use optional zero/nil fields.
+      optional-patterns:
+        - 'github.com/nutanix-cloud-native/prism-go-client/.*'
+        - 'github.com/nutanix-cloud-native/prism-go-client.Credentials'
+        - 'github.com/rancher/machine/.*'
+        - 'github.com/nutanix/docker-machine/machine/driver.NutanixDriver'
+        - 'go.yaml.in/yaml/v3.Node'
+        - 'net/url.URL'
+    gomoddirectives:
+      replace-allow-list:
+        - github.com/urfave/cli # Rancher RPC-compatible CLI implementation.
+        - github.com/nutanix-cloud-native/prism-go-client # Isolated transport security fix.
+    gocritic:
+      enable-all: true
+    cyclop:
+      max-complexity: 15
+    funlen:
+      lines: 75
+    gosec:
+      severity: low
+      confidence: low
+      config:
+        global:
+          audit: true
+          nosec: true
+    staticcheck:
+      checks: [all]
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # Public persisted structs keep their established layout.
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: add-constant
+          arguments:
+            - max-lit-count: "3"
+              allow-strs: '""'
+              allow-ints: "0,1,2"
+              allow-floats: "0.0,1.0,2.0"
+        - name: line-length-limit
+          arguments: [160]
+        - name: cognitive-complexity
+          arguments: [30]
+        - name: cyclomatic
+          arguments: [15]
+    exhaustive:
+      default-signifies-exhaustive: false
+  exclusions:
+    presets: []
+    warn-unused: true
+    rules:
+      # Retain the public package import/API while enforcing every other revive rule.
+      - path: '^utils/'
+        linters: [revive]
+        text: 'package-naming:.*"utils"'
+      # Fixture JSON keys and table-driven zero values mirror the external API.
+      - path: _test\.go$
+        linters: [exhaustruct_v5, goconst, mnd]
+      # Retain persisted Machine JSON spelling; changing it breaks stored config.
+      - source: 'VMNicQueues\s+string'
+        linters: [tagliatelle]
+      # Remaining Machine fields use the established implicit JSON keys for saved state.
+      - source: 'json.Marshal\(nodeDriver\)'
+        linters: [musttag]
+      # This function is a declarative RPC flag table, not executable orchestration.
+      - source: '^func \(\*NutanixDriver\) GetCreateFlags\('
+        linters: [revive, funlen]
+        text: '(function-length:|Function .* is too long)'
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
