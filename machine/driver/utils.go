@@ -14,15 +14,16 @@ import (
 
 const yamlStringTag = "!!str"
 
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 var (
 	errUtilityGPUNameRequired = errors.New("gpu name must be passed in order to retrieve the GPU")
 	errUtilityNoGPUsAvailable = errors.New("no available GPUs found in Prism Element cluster")
 	errUtilityGPUUnavailable  = errors.New("no available GPU found in Prism Element that matches required GPU name")
+	errUtilityGPUDeviceID     = errors.New("matching unused GPU has no device ID")
 )
 
 func isUUID(uuid string) bool {
-	uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
 	return uuidPattern.MatchString(uuid)
 }
 
@@ -88,8 +89,28 @@ func buildScalarNodes(key string) []*yaml.Node {
 func GetGPUList(ctx context.Context, conn *prism.Client, gpus []string, peUUID string) ([]*prism.VMGpu, error) {
 	resultGPUs := make([]*prism.VMGpu, 0, len(gpus))
 
-	for _, gpu := range gpus {
-		foundGPU, err := GetGPU(ctx, conn, peUUID, gpu)
+	var allGPUs []*prism.GPU
+
+	for index, gpu := range gpus {
+		if gpu == "" {
+			return nil, errUtilityGPUNameRequired
+		}
+
+		contextErr := ctx.Err()
+		if contextErr != nil {
+			return nil, fmt.Errorf("GPU inventory selection: %w", contextErr)
+		}
+
+		if index == 0 {
+			var err error
+
+			allGPUs, err = GetGPUsForPE(ctx, conn, peUUID)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		foundGPU, err := gpuFromInventory(allGPUs, peUUID, gpu)
 		if err != nil {
 			return nil, err
 		}
@@ -107,12 +128,16 @@ func GetGPU(ctx context.Context, conn *prism.Client, peUUID, gpu string) (*prism
 		return nil, errUtilityGPUNameRequired
 	}
 
-	log.Infof("Searching GPU %s in Prism Element with UUID %s", gpu, peUUID)
-
 	allGPUs, err := GetGPUsForPE(ctx, conn, peUUID)
 	if err != nil {
 		return nil, err
 	}
+
+	return gpuFromInventory(allGPUs, peUUID, gpu)
+}
+
+func gpuFromInventory(allGPUs []*prism.GPU, peUUID, gpu string) (*prism.VMGpu, error) {
+	log.Infof("Searching GPU %s in Prism Element with UUID %s", gpu, peUUID)
 
 	if len(allGPUs) == 0 {
 		return nil, fmt.Errorf("%w with UUID %s", errUtilityNoGPUsAvailable, peUUID)
@@ -124,6 +149,10 @@ func GetGPU(ctx context.Context, conn *prism.Client, peUUID, gpu string) (*prism
 		}
 
 		if peGPU.Name == gpu {
+			if peGPU.DeviceID == nil {
+				return nil, fmt.Errorf("%w: %s", errUtilityGPUDeviceID, gpu)
+			}
+
 			log.Infof("GPU %s found with ID %d in Prism Element", peGPU.Name, *peGPU.DeviceID)
 
 			return &prism.VMGpu{

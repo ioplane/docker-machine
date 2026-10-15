@@ -1,13 +1,12 @@
-# Nutanix node driver: план модернизации v12
+# Nutanix node driver: план модернизации v17
 
-Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
+Дата: 2026-10-16. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
 
-Канонический v12 закрывает input/HTTP/auth/deadline/NIC prerequisite batch;
-источник приёмки — его общий индекс и exact-head receipts. Следующий активный
-scope — `um-docs-nrsu.4.8.1.1`: driver journal/checkpoint. Parent `um-docs-nrsu.4.8.1`
-остаётся открытым до consumer resume `um-docs-nrsu.4.8.1.2`. Секции v3–v11 ниже
-содержат исторические снимки этапов; актуальные ограничения C1 приведены в v12.
+Текущий этап v17 — `um-docs-nrsu.4.8.5`: inventory HTTP budget, GPU selection и
+неизменяемый pin SDK. Предыдущие секции сохраняют исторические контракты
+input/HTTP/auth/deadline/NIC и C1 journal/consumer recovery; текущие статусы
+и последующие gates принадлежат Beads и каноническому плану.
 
 ## Порядок
 
@@ -39,7 +38,7 @@ merge или внедрение. Каждая semantic wave начинается
 | `um-docs-nrsu.4.8.8` | SDK v4: terminal task states и отменяемый Operation.Wait | W2 | P1/C2 |
 | `um-docs-nrsu.4.8.1` | Сохранение operation identity и безопасное восстановление Create/Delete | W3 | P1/C1 |
 | `um-docs-nrsu.6.10.8` | SDK: структура пакетов, функций и совместимость публичного API | W4 | P2/C3 |
-| `um-docs-nrsu.4.8.5` | Пагинация и HTTP budget inventory/GPU | W5 | P2/C3 |
+| `um-docs-nrsu.4.8.5` | Пагинация и HTTP budget inventory/GPU | W3 | P1/C2 |
 | `um-docs-nrsu.6.10.9` | SDK: измерения производительности и повторяемости операций | W5 | P2/C3 |
 | `um-docs-nrsu.6.10.11` | Release: SBOM, provenance и неизменяемый consumer pin | W7 | P2/C3 |
 
@@ -337,3 +336,56 @@ exact-head CI и отдельные SPEC/quality reviews. CLI Exists(name) бл�
 автоматический повтор create до driver hook; consumer opt-in resume относится
 к `um-docs-nrsu.4.8.1.2`. Parent C1 остаётся открытым; live Prism, production
 registration и canary не входят в этот driver stage.
+
+
+## Inventory/GPU: этап v17
+
+`GetGPUList` получает host inventory один раз на непустой валидный список;
+пустой список и пустое первое имя не отправляют запрос. Проверка имён
+сохраняет порядок: прежняя ошибка выбора первой GPU имеет приоритет над
+ошибкой последующего пустого имени. Cancellation между именами проверяется
+через context без второго HTTP; errors.Is сохраняет исходную причину.
+Повторённые имена выбирают ту же первую
+matching UNUSED GPU, как прежде; новый reservation/dedup policy не вводится.
+Фильтрация по PE UUID, точное регистрозависимое имя и передача DeviceID/Mode/Vendor
+сохраняются. Matching UNUSED GPU с nil DeviceID возвращает описательную ошибку
+и через `GetGPUList`, и через отдельный `GetGPU`.
+
+`isUUID` использует один precompiled regexp с прежним anchored шаблоном
+36 hex/hyphen символов. Upper/lowercase и zero UUID допустимы по прежнему
+shape contract; RFC version/variant validation не добавляется. Braces, URN,
+неверный hex, пропущенные hyphens и leading/trailing newline отклоняются.
+
+Root и nested integration modules используют
+`github.com/ioplane/prism-go-client v0.8.3-0.20261015222455-d4df6f8a97b0`
+(commit `d4df6f8a97b0848dd32f6b6841e71ddeb9687fb2`). SDK сохраняет исторический
+host one-fetch exception; 17 других ListAll wrappers проверяют raw metadata
+и observed entity count. Valid clusters/subnets/images fixtures содержат
+`offset: 0`; intentional malformed response fixtures сохраняются. Consumer
+`github.com/ioplane/rancher-machine v0.15.1-0.20261015203543-8661095ef1e0`
+не меняется. Public signatures, RPC/config/state JSON и allocation semantics
+сохраняются; новых dependencies, caches и retry policy нет.
+
+Критичный RED на parent `b86dd7c5bbc32c23066d3cafd81ae416bda2bd94`: два
+host requests для двух GPU и repeated-name list, panic nil DeviceID в обоих
+entrypoints. GREEN: 11 GPU cases — 0/1 host fetch; 11 UUID shape cases.
+`testing.AllocsPerRun(1000)`, три серии для valid UUID и invalid string,
+показывает 153 allocations/run до regexp hoist и 0 после; оба измерения под race.
+Это fixture measurement, не production latency или throughput.
+
+Источники: прежний `machine/driver/utils.go`, pinned SDK v3 types/host contract;
+Context7 `/golang/go`, [regexp anchor semantics](https://github.com/golang/go/blob/go1.27.2/src/regexp/syntax/doc.go)
+и [AllocsPerRun](https://github.com/golang/go/blob/go1.27.2/src/testing/allocs.go).
+Rootless Testcontainers и exact-head CI являются отдельными receipts; merge,
+Rancher registration и live Prism/GPU allocation этим этапом не разрешаются.
+
+Полный существующий `make check` в pinned Podman environment: exit 0;
+driver race/shuffle/atomic — 4.573 s, coverage 81.5%. Root и nested integration
+strict lint — 0 issues; formatter, tidy/verify и совпадение SDK/consumer pins
+успешны. Public utility signatures (3) и точный regexp совпадают с parent.
+Govulncheck в обоих modules сообщает 0 symbol/package findings и 1 required-only
+`GO-2026-5932` (`golang.org/x/crypto/openpgp`, fixed version N/A); этот прежний
+residual остаётся в полном quality task, SSH dependency не меняется. Integration
+lint также сообщает 4 прежних unused exclusion warnings; rules не меняются.
+Rootless Testcontainers runtime локально не запускался; compile-only integration
+check не является его приёмкой.
