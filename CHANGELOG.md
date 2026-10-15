@@ -22,6 +22,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- New commit titles use English declarative noun phrases; PR review language and inherited commit history remain unchanged.
+
 - Go toolchain and dependencies refreshed; maintained Rancher Machine replaces
   archived Docker Machine while preserving the operational driver name and JSON
   configuration contract. No production driver registration is performed.
