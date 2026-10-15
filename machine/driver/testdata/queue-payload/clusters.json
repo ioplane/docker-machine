@@ -1,1 +1,1 @@
-{"metadata":{"total_matches":1,"length":1},"entities":[{"metadata":{"uuid":"cluster-id"},"spec":{"name":"test-only"},"status":{"name":"test-only"}}]}
+{"metadata":{"offset":0,"total_matches":1,"length":1},"entities":[{"metadata":{"uuid":"cluster-id"},"spec":{"name":"test-only"},"status":{"name":"test-only"}}]}

@@ -42,6 +42,10 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - API response diagnostics no longer echo server payloads, messages, details or arbitrary HTTP status text, while preserving cancellation and JSON causes through errors.Is/As.
 
 ### Fixed
+
+- GPU lists reuse one host inventory request while preserving exact name, target-cluster and UNUSED selection, including repeated-name behavior. Matching GPUs without a device ID return an error instead of panicking. Empty lists and an empty first name make no inventory request.
+- UUID shape checks reuse the unchanged anchored case-insensitive hexadecimal pattern instead of recompiling it on every call.
+- Root and integration modules pin the reviewed SDK pagination and task-wait fixes at `d4df6f8a97b0848dd32f6b6841e71ddeb9687fb2`; valid list fixtures include explicit zero offsets.
 - CLI checkpoint cleanup waits within a bounded deadline for asynchronously killed plugin listeners to refuse connections; cancellation and unrelated probe errors remain failures.
 - The checkpoint Kubernetes fixture decodes actual SecretStore protobuf PUTs with the pinned Kubernetes serializer; an offline real-SecretStore regression verifies the wire format without changing client defaults.
 
