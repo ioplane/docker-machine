@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 	"time"
 
 	client "github.com/nutanix-cloud-native/prism-go-client"
@@ -86,17 +87,44 @@ func poll(ctx context.Context, observe func() (bool, error)) error {
 	}
 }
 
-func transientObservation(err error) bool {
-	var response *client.ResponseError
-	if !errors.As(err, &response) {
-		return false
+func responseStatus(err error) int {
+	if response, ok := errors.AsType[*client.ResponseError](err); ok {
+		return response.StatusCode
 	}
 
-	switch response.StatusCode {
+	return 0
+}
+
+func transientObservation(err error) bool {
+	switch responseStatus(err) {
 	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
 		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return true
 	default:
 		return false
 	}
+}
+
+func vmAbsent(ctx context.Context, conn *prismv3.Client, vmUUID string) (bool, error) {
+	response, err := conn.V3.GetVM(ctx, vmUUID)
+
+	ctxErr := ctx.Err()
+	if ctxErr != nil {
+		return false, fmt.Errorf("observe VM deletion: %w", ctxErr)
+	}
+
+	if err != nil {
+		if responseStatus(err) == http.StatusNotFound {
+			return true, nil
+		}
+
+		return false, fmt.Errorf("observe VM deletion: %w", err)
+	}
+
+	if response == nil || response.Metadata == nil || response.Metadata.UUID == nil ||
+		!strings.EqualFold(*response.Metadata.UUID, vmUUID) {
+		return false, errInvalidVM
+	}
+
+	return false, nil
 }

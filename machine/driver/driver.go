@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -111,6 +112,10 @@ func NewDriver(hostname, storePath string) *NutanixDriver {
 
 // Create a host using the driver's config.
 func (d *NutanixDriver) Create() error {
+	if d.VMId != "" {
+		return fmt.Errorf("%w: existing VM identity requires reconciliation before Create", errDriverConfiguration)
+	}
+
 	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return err
@@ -473,6 +478,10 @@ func (d *NutanixDriver) createVM(ctx context.Context) error {
 }
 
 func (d *NutanixDriver) removeVM() error {
+	if !isUUID(d.VMId) {
+		return errInvalidVM
+	}
+
 	ctx, cancel, err := d.operationContext()
 	if err != nil {
 		return err
@@ -484,8 +493,19 @@ func (d *NutanixDriver) removeVM() error {
 		return err
 	}
 
+	observe := func() (bool, error) { return vmAbsent(ctx, conn, d.VMId) }
+
+	absent, err := observe()
+	if err != nil || absent {
+		return err
+	}
+
 	resp, err := conn.V3.DeleteVM(ctx, d.VMId)
 	if err != nil {
+		if responseStatus(err) == http.StatusNotFound {
+			return poll(ctx, observe)
+		}
+
 		return fmt.Errorf("delete VM: %w", err)
 	}
 
@@ -494,7 +514,21 @@ func (d *NutanixDriver) removeVM() error {
 		return err
 	}
 
-	return waitForTask(ctx, conn, taskUUID)
+	err = waitForTask(ctx, conn, taskUUID)
+	if err != nil {
+		if !errors.Is(err, errTaskFailed) {
+			return err
+		}
+
+		absent, observationErr := observe()
+		if observationErr != nil || !absent {
+			return errors.Join(err, observationErr)
+		}
+
+		return nil
+	}
+
+	return poll(ctx, observe)
 }
 
 // nicQueues also validates persisted driver state before any API request.
