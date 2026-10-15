@@ -119,7 +119,7 @@ SSH-зависимость x/crypto не объявляется уязвимым
 
 ## HTTP boundary v4
 
-Driver закреплён на SDK `6ee1b0d01b4e362ee4c929a77893ac7810b81a48`, Go module
+На этапе v4 driver закреплён на SDK `6ee1b0d01b4e362ee4c929a77893ac7810b81a48`, Go module
 `v0.8.3-0.20261015100321-6ee1b0d01b4e`, разрешённом через go list и GitHub API.
 JSON/error body budgets: 64 MiB/64 KiB, application read максимум budget+1.
 ResponseError.StatusCode и errors.Is/As заменяют server-message matching;
@@ -156,3 +156,15 @@ Go 1.27 release notes повторно сверены через GH GraphQL, sou
 Следующая очередь: review/delivery input и HTTP patches, затем auth/replay и
 общий deadline по существующим Beads prerequisites; далее NIC/IP identity и
 operation reconcile. Full SDK stylistic quality остаётся отдельным W2/rank90.
+
+
+## Upload SDK pin: этап v6
+
+Driver использует SDK `e7f87ddb90ec2631d0cbe7ba3936c3e90946cf5b`, Go module
+`v0.8.3-0.20261015110003-e7f87ddb90ec`, подтверждённый через go list/GH API.
+Upload builders читают текущий диапазон caller-owned regular file через
+независимые SectionReader; повтор после Body.Close не использует закрытый
+файл, Content-Length соответствует оставшимся bytes. v3 Operations.UploadImage
+сохраняет свой defer Close. Новых retries, API fields и queue payload изменений нет.
+Этап 4.8.7 остаётся in_progress: session refresh/cancellation и cache ещё открыты.
+Полный SDK strict quality остаётся отдельным W2/rank90; новых driver tests нет.
