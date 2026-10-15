@@ -7,6 +7,9 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Isolated Testcontainers Go v0.44.0 module with a disposable Prism TLS fixture
+  and a blocking rootless Podman CI gate covering queue payloads and API failures.
+
 - Optional `nutanix-vm-nic-queues` for all newly created NICs, with strict positive
   integer and total vCPU validation. Omission preserves the previous API payload.
 - Offline SDK payload and executable RPC compatibility tests, a development plan,

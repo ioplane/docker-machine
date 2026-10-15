@@ -67,3 +67,22 @@ release:
 	$(RELEASE_RUN) --env GITHUB_TOKEN $(RELEASE_IMAGE) sh -ec 'cd machine; goreleaser release --clean'
 
 check: mod-check test race vet lint fmt-check vuln build
+
+# Testcontainers uses an unprivileged Podman service, never the host root socket.
+PODMAN_SOCKET ?= $(XDG_RUNTIME_DIR)/podman/podman.sock
+integration-build:
+	$(DEV_RUN) env CGO_ENABLED=0 go build -trimpath -o build/prism-fixture ./tests/integration/fixture/main.go
+	$(PODMAN) build --ignorefile tests/integration/fixture.containerignore -f tests/integration/Containerfile.fixture -t localhost/ioplane-prism-fixture:premerge .
+
+integration-mod-check:
+	$(DEV_RUN) sh -ec 'cd tests/integration; cp go.mod /tmp/integration.mod; cp go.sum /tmp/integration.sum; GOFLAGS=-buildvcs=false go mod tidy; cmp /tmp/integration.mod go.mod; cmp /tmp/integration.sum go.sum; go mod verify; go vet ./...; go test -run "^$$" ./...'
+
+integration:
+	@test "$$($(PODMAN) info --format '{{.Host.Security.Rootless}}')" = true
+	@test -S "$(PODMAN_SOCKET)"
+	$(PODMAN_RUN) --network=host -v "$(PODMAN_SOCKET):$(PODMAN_SOCKET)" \
+		--env DOCKER_HOST=unix://$(PODMAN_SOCKET) --env TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1 \
+		--env TESTCONTAINERS_RYUK_DISABLED=true $(DEV_IMAGE) \
+		sh -ec 'cd tests/integration; go test -race -count=1 -shuffle=on -timeout=5m -v ./...'
+
+.PHONY: integration-build integration-mod-check integration
