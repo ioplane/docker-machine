@@ -154,6 +154,7 @@ func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http
 
 		var inventory struct {
 			Entities []json.RawMessage `json:"entities"`
+			Metadata map[string]int64  `json:"metadata"`
 		}
 
 		err = json.Unmarshal(data, &inventory)
@@ -176,6 +177,8 @@ func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http
 		duplicate := strings.ReplaceAll(string(inventory.Entities[index]), identity, "duplicate-"+identity)
 		duplicate = strings.ReplaceAll(duplicate, "first-vpc", "second-vpc")
 		inventory.Entities = append(inventory.Entities, json.RawMessage(duplicate))
+		inventory.Metadata["length"] = int64(len(inventory.Entities))
+		inventory.Metadata["total_matches"] = int64(len(inventory.Entities))
 
 		err = json.NewEncoder(writer).Encode(inventory)
 		if err != nil {
