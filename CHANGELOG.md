@@ -42,6 +42,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - API response diagnostics no longer echo server payloads, messages, details or arbitrary HTTP status text, while preserving cancellation and JSON causes through errors.Is/As.
 
 ### Fixed
+- The checkpoint Kubernetes fixture decodes actual SecretStore protobuf PUTs with the pinned Kubernetes serializer; an offline real-SecretStore regression verifies the wire format without changing client defaults.
 
 - Create intent normalizes the default SSH username before hashing, so later SSH provisioning and JSON-restored lifecycle operations retain the same journal binding.
 

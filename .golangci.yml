@@ -33,6 +33,11 @@ linters:
             - $gostd
             - github.com/nutanix/docker-machine
             - github.com/testcontainers/testcontainers-go
+            - github.com/rancher/machine/libmachine/host
+            - github.com/rancher/machine/libmachine/persist
+            - k8s.io/api/core/v1
+            - k8s.io/apimachinery/pkg/apis/meta/v1
+            - k8s.io/apimachinery/pkg/runtime
     errcheck:
       check-type-assertions: true
       check-blank: true
