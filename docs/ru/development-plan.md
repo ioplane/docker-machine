@@ -1,4 +1,4 @@
-# Nutanix node driver: план модернизации v3
+# Nutanix node driver: план модернизации v4
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
@@ -115,3 +115,19 @@ pin с читаемой версией сохраняется. Findings заре
 к неимпортируемому `golang.org/x/crypto/openpgp`, исправленной версии нет.
 SSH-зависимость x/crypto не объявляется уязвимым исполненным путём по наличию
 другого пакета в module. Advisory сохраняется в ограничениях supply-chain audit.
+
+
+## HTTP boundary v4
+
+Driver закреплён на SDK `6ee1b0d01b4e362ee4c929a77893ac7810b81a48`, Go module
+`v0.8.3-0.20261015100321-6ee1b0d01b4e`, разрешённом через go list и GitHub API.
+JSON/error body budgets: 64 MiB/64 KiB, application read максимум budget+1.
+ResponseError.StatusCode и errors.Is/As заменяют server-message matching;
+обычные errors/logs не раскрывают response payload. Unfiltered io.Writer
+остаётся потоковым; исходный body закрывает его первоначальный владелец.
+
+Изменение SDK помечено breaking; wire/RPC/config поля driver сохраняются.
+Текущие consumer/RPC/Testcontainers gates проверяют новый pin. Новых driver
+features, tests, dependencies tools и performance campaigns для pin нет.
+Следующий runtime scope — оставшиеся YAML/hardware inputs, auth/replay/deadline;
+merge/release/live acceptance остаются отдельными gates.

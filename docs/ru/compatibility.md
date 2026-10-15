@@ -37,8 +37,8 @@ RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после норм�
 ## Prism SDK и JSON API
 
 База Prism SDK — стабильная версия `v0.8.2`. В `go.mod` закреплён fork
-`github.com/ioplane/prism-go-client v0.8.3-0.20261015093137-f51cc86ec69f`,
-commit `f51cc86ec69faa10a8a79e39ce778b9d1af21b26`,
+`github.com/ioplane/prism-go-client v0.8.3-0.20261015100321-6ee1b0d01b4e`,
+commit `6ee1b0d01b4e362ee4c929a77893ac7810b81a48`,
 [PR #1](https://github.com/ioplane/prism-go-client/pull/1).
 Это исправление поверх `v0.8.2`, а не опубликованный upstream release `v0.8.3`.
 Причина: upstream SDK изменяет общий `http.DefaultTransport` при создании клиента.
@@ -46,8 +46,18 @@ commit `f51cc86ec69faa10a8a79e39ce778b9d1af21b26`,
 Fork клонирует transport для каждого клиента и возвращает ошибку при неподдерживаемом
 типе default transport. Тестовая параллельность сохранена. Дополнительно SDK filter возвращает ошибку
 для nil filter и неверной формы entities вместо panic; корректные ответы
-и импортируемые сигнатуры сохраняются. Ограничение размера HTTP body
-и безопасный текст API errors остаются отдельной открытой задачей.
+и импортируемые сигнатуры сохраняются. Общий HTTP boundary ограничивает network
+JSON до 64 MiB и error body до 64 KiB. ResponseError.StatusCode и Unwrap сохраняют machine-readable status
+и причину; ErrResponseTooLarge определяется через errors.Is. Server body,
+message/details и произвольный HTTP status text исключены из обычного Error/log.
+Нефильтрованный io.Writer остаётся потоковым. Крупные inventory используют
+пагинацию; прежние message-string assertions заменяются на errors.As/Is.
+Это breaking diagnostics/size policy SDK, не ограничение Nutanix API.
+
+Public API сравнен по 15 packages W0: 14 без изменений; root аддитивно содержит
+новый error type/sentinel и методы. Credentials, VM DTO, nil/omitted fields
+и v4/converged categories не изменены. W0 text hash исторический, binary Go ABI
+из этого сравнения не следует.
 
 Используемый запрос остаётся
 `POST /api/nutanix/v3/vms`, поле — `spec.resources.nic_list[].num_queues`.
