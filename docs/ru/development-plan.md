@@ -1,11 +1,11 @@
-# Nutanix node driver: план модернизации v2
+# Nutanix node driver: план модернизации v3
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
 
 ## Порядок
 
-Baseline → quality/governance → HTTP/auth/input/deadline → operation identity/reconcile → структура → измеренная оптимизация → Rancher wiring → release → согласованный canary → scale/replace/upgrade.
+Baseline и действующие quality gates → исправления SDK/node driver → HTTP/auth/input/deadline → operation identity/reconcile → структура → измеренная оптимизация → Rancher wiring → release → согласованный canary → scale/replace/upgrade.
 
 Критичность и порядок независимы: P1/C1 recovery не выполняется до проверки
 входа/deadline и quality gates. Статусы проверять в Beads; код в PR не означает
@@ -19,7 +19,7 @@ merge или внедрение. Каждая semantic wave начинается
 | `um-docs-nrsu.6.10.5` | Pre-merge аудит Go 1.16–1.27, API/RE и Testcontainers | closed audit | P1/C2 |
 | `um-docs-nrsu.6.10.12` | SDK/driver: baseline пакетов, входных данных и производительности | W0 | P1/C3 |
 | `um-docs-nrsu.6.10.10` | Fork governance: Keep a Changelog и Conventional Commits | W1 | P1/C2 |
-| `um-docs-nrsu.6.10.6` | Go quality: полный lint, formatter, input inventory и fuzz gates | W1 | P1/C2 |
+| `um-docs-nrsu.6.10.6` | Go quality: полный lint, formatter, input inventory и fuzz gates | W2 | P1/C2 |
 | `um-docs-nrsu.6.10.1` | Node driver: форк ioplane и обновление Go/компонентов | W1 | P1/C3 |
 | `um-docs-nrsu.6.10.2` | Node driver: golangci-lint v2 строгий профиль и CI | W1 | P1/C2 |
 | `um-docs-nrsu.6.10.3` | Node driver: optional vNIC queues и контрактные тесты | W1 | P2/C3 |
@@ -48,7 +48,7 @@ Auth/body replay, concurrent cache и v4 terminal states проверять ад
 
 Go tools, exact images/dependencies, readonly/tidy/verify, race/shuffle/atomic,
 vet и whole graph govulncheck выполнять в Podman. Full SDK strict lint/fuzz
-остаются W1; compiler/module inventory W0 включает nested nusights. Testcontainers проверяет HTTP boundary,
+остаются отдельной задачей W2 после адресных исправлений; compiler/module inventory W0 включает nested nusights. Testcontainers проверяет HTTP boundary,
 не полную семантику Prism. Performance измерять по одинаковым fixtures и input:
 request/TLS/auth counts, allocations, bytes, memory/FD/goroutines и latency.
 
@@ -79,3 +79,39 @@ fixtures не выводится. Compiler/module/API inventory собирает
 [Датированный W0 baseline: compiler/API inputs, fixtures и распределения](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/baseline-2026-10-15.md).
 Root `./...` не охватывает nested modules. В SDK nusights имеет отдельный
 module-level vulnerability gate; runtime pin driver в W0 не меняется.
+
+
+## Приоритет разработки v3
+
+По указанию владельца сначала исправлять SDK и node driver. Полный stylistic
+lint/formatter SDK не блокирует адресные исправления `um-docs-nrsu.4.8.4` и
+`um-docs-nrsu.4.8.6`; их prerequisite — закрытый W0 и действующие обязательные
+checks. Новые тесты добавлять только для критичных исправляемых регрессий;
+существующие race/vet/vuln/module/RPC и driver lint gates сохраняются.
+Не добавлять новые benchmark campaigns и test frameworks для этого этапа.
+
+Текущий batch: timeout считывается из запроса до minimum clamp; SDK filter
+отклоняет nil filter, отсутствующий/null/non-array entities и non-object element
+с ошибкой вместо panic. Корректные filter payload и optional queue/RPC JSON
+контракты сохраняются. Остальная валидация YAML/hardware, bounded response
+bodies и безопасная диагностика остаются открыты в Beads; этот batch их не закрывает.
+
+Go release notes проверены через GitHub API
+[`golang/website` — Go 1.27](https://go.dev/doc/go1.27), source blob
+`2d38a2be7836deca1d17451c6e03dd444f282847`; stdlib HTTP body ownership проверен
+через Context7 `/golang/go`. Новые зависимости и версии tools для этих
+исправлений не требуются. Driver использует неизменяемый pin исправленного SDK.
+
+SonarCloud Web API `issues/search`, PR #1, 2026-10-15: security gate сообщает
+`docker:S6471` для root в dev/fixture containers и `go:S4036` для PATH тестового
+helper driver; `go:S3776` в SDK transport test относится к cognitive complexity.
+`docker:S8431` рекомендует убрать сочетание tag+digest; обязательный immutable
+pin с читаемой версией сохраняется. Findings зарегистрированы в
+`um-docs-nrsu.6.10.6`; suppression и отключение checks не выполняются.
+
+
+Проверка текущего driver dependency graph через `govulncheck -show verbose`:
+0 symbol-level, 0 package-level findings; module-only `GO-2026-5932` относится
+к неимпортируемому `golang.org/x/crypto/openpgp`, исправленной версии нет.
+SSH-зависимость x/crypto не объявляется уязвимым исполненным путём по наличию
+другого пакета в module. Advisory сохраняется в ограничениях supply-chain audit.

@@ -34,13 +34,15 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Requested Nutanix timeout is read before the 300-second minimum clamp, preserving custom values on a fresh driver and clamping low values after prior configuration.
+
 - Malformed create metadata returns an error; an accepted VM identity survives
   task validation failure; partially resolved NIC profiles are rejected before Create.
 - SDK non-2xx failures and response-body ownership are covered by regression tests.
 
 - Prism SDK transport isolation through the pinned `ioplane/prism-go-client`
-  revision `eefdc324a6c3989ef60f54cc8a68fdce947d7366`, based on upstream `v0.8.2`;
-  concurrent clients retain separate TLS/proxy settings.
+  revision `f51cc86ec69faa10a8a79e39ce778b9d1af21b26`, based on upstream `v0.8.2`;
+  concurrent clients retain separate TLS/proxy settings, and malformed filtered entity shapes return errors instead of panicking.
 - Missing task UUID returns an error; malformed cloud-init returns an error
   instead of terminating the driver. Diagnostic helpers omit credentials and
   request/response payloads.
