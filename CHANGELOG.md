@@ -26,11 +26,17 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The pinned Prism SDK bounds decoded/filtered network JSON to 64 MiB and error bodies to 64 KiB. ResponseError status/cause classification replaces server-message matching; unfiltered io.Writer stays streaming. Large inventories require pagination.
+
 - New commit titles use English declarative noun phrases; PR review language and inherited commit history remain unchanged.
 
 - Go toolchain and dependencies refreshed; maintained Rancher Machine replaces
   archived Docker Machine while preserving the operational driver name and JSON
   configuration contract. No production driver registration is performed.
+
+### Security
+
+- API response diagnostics no longer echo server payloads, messages, details or arbitrary HTTP status text, while preserving cancellation and JSON causes through errors.Is/As.
 
 ### Fixed
 
@@ -41,7 +47,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - SDK non-2xx failures and response-body ownership are covered by regression tests.
 
 - Prism SDK transport isolation through the pinned `ioplane/prism-go-client`
-  revision `f51cc86ec69faa10a8a79e39ce778b9d1af21b26`, based on upstream `v0.8.2`;
+  revision `6ee1b0d01b4e362ee4c929a77893ac7810b81a48`, based on upstream `v0.8.2`;
   concurrent clients retain separate TLS/proxy settings, and malformed filtered entity shapes return errors instead of panicking.
 - Missing task UUID returns an error; malformed cloud-init returns an error
   instead of terminating the driver. Diagnostic helpers omit credentials and
