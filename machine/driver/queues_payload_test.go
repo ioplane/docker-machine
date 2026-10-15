@@ -71,7 +71,7 @@ func TestCreateQueuePayload(t *testing.T) {
 			}
 
 			payload := capturedPayload(t, fixture)
-			assertQueuePayload(t, payload, value)
+			assertQueuePayload(t, payload, value, []string{fixtureDirectSubnet, "vlan-id", "overlay-id"})
 			assertCloudMetadata(t, payload)
 			assertCorePayload(t, payload)
 			assertDefaultCloudInit(t, payloadResources(t, payload))
@@ -297,7 +297,7 @@ func payloadResources(t *testing.T, payload createPayload) createPayload {
 	return resources
 }
 
-func assertQueuePayload(t *testing.T, payload createPayload, queues string) {
+func assertQueuePayload(t *testing.T, payload createPayload, queues string, wantSubnets []string) {
 	t.Helper()
 
 	resources := payloadResources(t, payload)
@@ -306,7 +306,6 @@ func assertQueuePayload(t *testing.T, payload createPayload, queues string) {
 
 	decodePayloadJSON(t, resources["nic_list"], &nics)
 
-	wantSubnets := []string{fixtureDirectSubnet, "vlan-id", "overlay-id"}
 	if len(nics) != len(wantSubnets) {
 		t.Fatalf("expected UUID, VLAN and OVERLAY NICs, got %d", len(nics))
 	}
@@ -500,4 +499,20 @@ func TestCreateMissingAdditionalSubnet(t *testing.T) {
 		t.Fatal("partial NIC profile reached VM create API")
 	default:
 	}
+}
+
+func TestCreateNICInputOrder(t *testing.T) {
+	t.Parallel()
+
+	fixture := newPayloadFixture(t, "")
+	node := payloadDriver(t, fixture.server, fixtureQueues)
+	node.Subnet = []string{"overlay", fixtureDirectSubnet, "vlan"}
+
+	err := node.Create()
+	if err == nil {
+		t.Fatal("fixture must reject create after capturing ordered NICs")
+	}
+
+	assertQueuePayload(t, capturedPayload(t, fixture), fixtureQueues,
+		[]string{"overlay-id", fixtureDirectSubnet, "vlan-id"})
 }

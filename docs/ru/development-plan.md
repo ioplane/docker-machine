@@ -1,4 +1,4 @@
-# Nutanix node driver: план модернизации v9
+# Nutanix node driver: план модернизации v10
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
@@ -253,3 +253,33 @@ TLS body stall и observed power state. Полная проверка и CI фи
 интеграцию нового SDK. Pin выровнен; integration-mod-check сравнивает replacement
 Path/Version обоих module graph перед tidy/verify/compile. Требуется новый TC
 прогон по итоговому driver SHA.
+
+
+## NIC/IP identity: этап v10
+
+`um-docs-nrsu.4.8.3`: NIC payload сохраняет порядок входного профиля. Имена
+разрешаются однозначно в целевом cluster для VLAN; совпадающие overlay names
+между VPC требуют явного UUID. Literal UUID используется как reference без
+дополнительного inventory request; существование и область проверяет Prism при
+Create. Duplicate/alias UUID, пустые профили и unresolved/malformed candidates
+отклоняются до Create. NicList присваивается атомарно после полной проверки.
+
+Management selector — UUID первой заявленной подсети, переданный в пределах
+Create operation. Ответ может менять порядок NIC: индекс не используется.
+Две NIC той же management-подсети — ошибка неоднозначности; disconnected NIC
+не выбирается. nil/empty endpoints безопасны; invalid IP возвращает ошибку,
+loopback/link-local/multicast/unspecified/scoped адреса исключены. Адреса
+нормализуются net/netip, IPv4 предпочитается IPv6, затем выбирается наименьший
+адрес. IPv6 parsing не доказывает end-to-end dual-stack Rancher/Prism support.
+Raw IP/response payload в ошибку не выводится.
+
+Новых CLI/RPC/config fields нет. Существующие профили с неоднозначными names или
+несколькими NIC одной подсети требуют устранения неоднозначности. Persisted
+selector и recovery после process restart остаются4.8.1; отдельный MAC/NIC UUID
+selector не добавлен без подтверждённого consumer/API контракта.
+
+RED name-first/UUID профиль выявил UUID-first reorder. Критичные проверки
+охватывают порядок payload, VLAN/VPC ambiguity, alias/casing, nil/malformed
+inventory/endpoints, reordering management NIC и IPv4/IPv6 parsing.
+Testcontainers queues fixture использует name-first/UUID порядок и проверяет
+subnet UUID каждой NIC; остальные boundary scenarios сохраняются.

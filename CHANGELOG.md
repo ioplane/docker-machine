@@ -40,6 +40,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- NIC payloads preserve the declared network order; named subnet lookups require exactly one candidate. Duplicate subnet identities, ambiguous VLAN/VPC names and malformed inventories are rejected without a partial profile. Management IP selection follows the first declared subnet UUID rather than the response NIC position, validates endpoints and uses stable IPv4-first address ordering.
+
 - The isolated Testcontainers module uses the same immutable SDK revision as the driver; integration module validation rejects divergent replacements before compiling fixtures. Earlier boundary runs used its older SDK pin.
 
 - One validated operation deadline covers constructor authentication, HTTP body reads, task/IP polling and both Restart transitions. v3 FAILED/ABORTED and malformed task responses fail immediately; only transient observation HTTP statuses retry with bounded jitter. Successful power tasks require the observed power state. Create failures and missing IP never trigger automatic VM deletion; accepted VM identity is retained. Critical lifecycle fixtures separate terminal assertions and expected submission counts for bounded cognitive complexity.
