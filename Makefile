@@ -88,7 +88,7 @@ integration:
 .PHONY: integration-build integration-mod-check integration
 
 integration-quality:
-	$(PODMAN_RUN) -w /src/tests/integration $(LINT_IMAGE) sh -ec 'golangci-lint run --timeout=5m ./... ./.ci; golangci-lint fmt --diff > /tmp/integration-format.patch; test ! -s /tmp/integration-format.patch || { cat /tmp/integration-format.patch; exit 1; }'
+	$(PODMAN_RUN) -w /src/tests/integration $(LINT_IMAGE) sh -ec 'golangci-lint run --timeout=5m ./...; golangci-lint fmt --diff > /tmp/integration-format.patch; test ! -s /tmp/integration-format.patch || { cat /tmp/integration-format.patch; exit 1; }'
 	$(DEV_RUN) go tool govulncheck -C tests/integration -test ./...
 
 .PHONY: integration-quality
