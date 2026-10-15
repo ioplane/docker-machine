@@ -63,4 +63,4 @@ replace github.com/urfave/cli => github.com/urfave/cli v1.11.1-0.20151120215642-
 
 tool golang.org/x/vuln/cmd/govulncheck
 
-replace github.com/nutanix-cloud-native/prism-go-client => github.com/ioplane/prism-go-client v0.8.3-0.20261015110003-e7f87ddb90ec
+replace github.com/nutanix-cloud-native/prism-go-client => github.com/ioplane/prism-go-client v0.8.3-0.20261015112743-9bf301c03909

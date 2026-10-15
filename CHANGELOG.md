@@ -40,6 +40,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The immutable Prism SDK pin includes synchronized session cookies, coalesced refresh for concurrent explicit 401 responses, filtered-path parity and cancellation of waiters. Non-replayable bodies and unknown transport outcomes are not retried; driver auth configuration, RPC and VM queue fields are preserved.
+
 - The immutable Prism SDK pin includes independent upload replay readers and correct remaining Content-Length; caller-owned regular files stay open across redirects. VM queue payloads and driver RPC/config fields are unchanged.
 
 - Create rejects invalid CPU/RAM and overflowing or negative disk sizes before Prism requests, including restored state with omitted queues. Cloud-init merges only top-level users, preserves existing root settings and keys, and rejects ambiguous YAML without disclosing userdata.
