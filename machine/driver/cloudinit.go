@@ -74,7 +74,7 @@ func cloudInitDocument(input string) (*yaml.Node, error) {
 
 	err := decoder.Decode(&document)
 	if errors.Is(err, io.EOF) {
-		return &yaml.Node{Kind: yaml.DocumentNode, HeadComment: "cloud-config", Content: []*yaml.Node{
+		return &yaml.Node{Kind: yaml.DocumentNode, HeadComment: "#cloud-config", Content: []*yaml.Node{
 			{Kind: yaml.MappingNode, Tag: yamlMappingTag},
 		}}, nil
 	}
