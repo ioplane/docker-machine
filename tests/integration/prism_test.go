@@ -28,12 +28,17 @@ const (
 	missingSubnetScenario = "missing-subnet"
 )
 
+type capturedReference struct {
+	UUID string `json:"uuid"`
+}
+
 type capturedNIC struct {
-	Queues int `json:"num_queues"` //nolint:tagliatelle // Prism v3 uses this exact JSON field.
+	SubnetReference capturedReference `json:"subnet_reference"` //nolint:tagliatelle // Prism v3 schema spelling.
+	Queues          int               `json:"num_queues"`       //nolint:tagliatelle // Prism v3 schema spelling.
 }
 
 type capturedResources struct {
-	NICs []capturedNIC `json:"nic_list"` //nolint:tagliatelle // Prism v3 uses this exact JSON field.
+	NICs []capturedNIC `json:"nic_list"` //nolint:tagliatelle // Prism v3 schema spelling.
 }
 
 type capturedSpec struct {
@@ -136,7 +141,13 @@ func assertCapturedCreate(t *testing.T, captured capturedCreate, scenario string
 		t.Fatalf("NIC count=%d, want 3", len(captured.Payload.Spec.Resources.NICs))
 	}
 
-	for _, nic := range captured.Payload.Spec.Resources.NICs {
+	subnets := []string{"overlay-id", "11111111-1111-1111-1111-111111111111", "vlan-id"}
+
+	for index, nic := range captured.Payload.Spec.Resources.NICs {
+		if nic.SubnetReference.UUID != subnets[index] {
+			t.Fatalf("NIC %d subnet=%s, want %s", index, nic.SubnetReference.UUID, subnets[index])
+		}
+
 		if nic.Queues != 2 {
 			t.Fatalf("num_queues=%d, want 2", nic.Queues)
 		}
@@ -197,7 +208,7 @@ func newDriver(t *testing.T, endpoint string) *driver.NutanixDriver {
 	nodeDriver.Insecure, nodeDriver.VMVCPUs, nodeDriver.VMCores = true, 2, 2
 	nodeDriver.VMMem, nodeDriver.Timeout = fixtureMemoryMiB, fixtureTimeoutSeconds
 	nodeDriver.VMNicQueues, nodeDriver.BootType = "2", "legacy"
-	nodeDriver.Subnet = []string{"11111111-1111-1111-1111-111111111111", "vlan", "overlay"}
+	nodeDriver.Subnet = []string{"overlay", "11111111-1111-1111-1111-111111111111", "vlan"}
 	nodeDriver.SSHKeyPath = filepath.Join(t.TempDir(), "id_rsa")
 
 	for _, suffix := range []string{"", ".pub"} {

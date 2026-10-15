@@ -37,8 +37,8 @@ RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после норм�
 ## Prism SDK и JSON API
 
 База Prism SDK — стабильная версия `v0.8.2`. В `go.mod` закреплён fork
-`github.com/ioplane/prism-go-client v0.8.3-0.20261015110003-e7f87ddb90ec`,
-commit `e7f87ddb90ec2631d0cbe7ba3936c3e90946cf5b`,
+`github.com/ioplane/prism-go-client v0.8.3-0.20261015125745-70ca9c60ff06`,
+commit `70ca9c60ff066dfa3ee00977d0f4c27998874245`,
 [PR #1](https://github.com/ioplane/prism-go-client/pull/1).
 Это исправление поверх `v0.8.2`, а не опубликованный upstream release `v0.8.3`.
 Причина: upstream SDK изменяет общий `http.DefaultTransport` при создании клиента.
@@ -119,10 +119,27 @@ alias/merge в изменяемых узлах и неверная форма ro
 
 ## Upload dependency: этап v6
 
-Текущий immutable pin — SDK `e7f87ddb90ec2631d0cbe7ba3936c3e90946cf5b`,
-`v0.8.3-0.20261015110003-e7f87ddb90ec`. HTTP budgets/errors из v4 сохраняются;
+Текущий immutable pin — SDK `70ca9c60ff066dfa3ee00977d0f4c27998874245`,
+`v0.8.3-0.20261015125745-70ca9c60ff06`. HTTP budgets/errors из v4 сохраняются;
 дополнительно исправлено владение file upload body и независимость replay.
 Public entry points, driver RPC/JSON и VM NIC queues сохраняются. Low-level
 upload callers должны держать regular file открытым и неизменным до завершения
 запроса/повторов; EOF даёт пустой body, pipe/device/directory отклоняются.
 Go API/wire совместимость не является утверждением о binary ABI или live Prism.
+
+
+## Deadline и NIC identity
+
+Один положительный operation timeout покрывает HTTP/body/task/IP/power;
+Restart разделяет этот бюджет между OFF/ON. CLI минимум300s сохранён; invalid
+restored timeout отклоняется. Failed/aborted task и malformed response не дают
+success; power task требует observed power state. Автоматического удаления VM
+из-за create/task/IP ошибки нет. Root и isolated Testcontainers используют
+одинаковый immutable SDK pin; CI проверяет replacement parity.
+
+NIC сохраняют порядок профиля. Имена с несколькими подходящими VLAN/overlay
+подсетями требуют UUID; повторные subnet UUID/aliases отклоняются. Management
+IP берётся с единственной NIC первой заявленной подсети. Порядок endpoint/NIC
+в ответе не задаёт identity; IPv4 имеет приоритет при выборе допустимых адресов.
+Это совместимость формата RPC/config, а не обещание принятия неоднозначного
+старого профиля или end-to-end IPv6 support.

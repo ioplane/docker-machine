@@ -469,7 +469,7 @@ func (d *NutanixDriver) createVM(ctx context.Context) error {
 		return fmt.Errorf(driverOperationFormat, err)
 	}
 
-	return d.finishCreate(ctx, conn, resp)
+	return d.finishCreate(ctx, conn, resp, *res.NicList[0].SubnetReference.UUID)
 }
 
 func (d *NutanixDriver) removeVM() error {
@@ -670,56 +670,6 @@ func (d *NutanixDriver) findCluster(ctx context.Context, conn *prismv3.Client) (
 	return foundClusters[0], nil
 }
 
-func (d *NutanixDriver) addNICs(
-	ctx context.Context, conn *prismv3.Client, clusterUUID string, res *prismv3.VMResources,
-) error {
-	queues, err := d.nicQueues()
-	if err != nil {
-		return err
-	}
-
-	subnetFilter := d.addUUIDNICs(res, queues)
-
-	// Retrieve all subnets
-	responseSubnets, err := conn.V3.ListAllSubnet(ctx, subnetFilter, getEmptyClientSideFilter())
-	if err != nil {
-		log.Errorf("Error getting subnets: [%v]", err)
-
-		return fmt.Errorf(driverOperationFormat, err)
-	}
-
-	// Search for non UUID Subnets
-	for _, query := range d.Subnet {
-		if isUUID(query) {
-			continue
-		}
-
-		log.Infof("Searching subnet %s", query)
-
-		for _, subnet := range responseSubnets.Entities {
-			if !matchesSubnet(subnet, query, clusterUUID) {
-				continue
-			}
-
-			res.NicList = append(res.NicList, &prismv3.VMNic{
-				SubnetReference: utils.BuildReference(*subnet.Metadata.UUID, "subnet"),
-				NumQueues:       queues,
-			})
-			log.Infof("Subnet %s found with UUID: %s", *subnet.Status.Name, *subnet.Metadata.UUID)
-
-			break
-		}
-	}
-
-	if len(res.NicList) != len(d.Subnet) {
-		log.Errorf("Network %s not found in cluster %s", d.Subnet, d.Cluster)
-
-		return fmt.Errorf("%w: network %s not found in cluster %s", errDriverConfiguration, d.Subnet, d.Cluster)
-	}
-
-	return nil
-}
-
 func (d *NutanixDriver) assignCategories(metadata *prismv3.Metadata) error {
 	if len(d.Categories) != 0 {
 		log.Infof("Categories provided: %s", d.Categories)
@@ -811,7 +761,7 @@ func (d *NutanixDriver) credentials() client.Credentials {
 	}
 }
 
-func (d *NutanixDriver) waitForIP(ctx context.Context, conn *prismv3.Client, vmUUID string) error {
+func (d *NutanixDriver) waitForIP(ctx context.Context, conn *prismv3.Client, vmUUID, subnetUUID string) error {
 	return poll(ctx, func() (bool, error) {
 		vmInfo, err := conn.V3.GetVM(ctx, vmUUID)
 		if err != nil {
@@ -822,13 +772,12 @@ func (d *NutanixDriver) waitForIP(ctx context.Context, conn *prismv3.Client, vmU
 			return false, errInvalidVM
 		}
 
-		nics := vmInfo.Status.Resources.NicList
-		if len(nics) == 0 || nics[0] == nil || len(nics[0].IPEndpointList) == 0 ||
-			nics[0].IPEndpointList[0] == nil || nics[0].IPEndpointList[0].IP == nil || *nics[0].IPEndpointList[0].IP == "" {
-			return false, nil
+		address, err := managementIP(vmInfo.Status.Resources.NicList, subnetUUID)
+		if err != nil || address == "" {
+			return false, err
 		}
 
-		d.IPAddress = *nics[0].IPEndpointList[0].IP
+		d.IPAddress = address
 
 		return true, nil
 	})
@@ -1009,40 +958,6 @@ func (d *NutanixDriver) setBootType(bootType string) error {
 	return nil
 }
 
-func (d *NutanixDriver) addUUIDNICs(res *prismv3.VMResources, queues *int64) string {
-	// Search target subnet
-	for index, subnet := range d.Subnet {
-		// Trim extraneous whitespace
-		d.Subnet[index] = strings.TrimSpace(subnet)
-	}
-
-	subnetFilter := ""
-
-	// Create subnets filter query and add UUID subnets directly
-	for _, subnet := range d.Subnet {
-		if isUUID(subnet) {
-			n := &prismv3.VMNic{
-				SubnetReference: utils.BuildReference(subnet, "subnet"),
-				NumQueues:       queues,
-			}
-
-			res.NicList = append(res.NicList, n)
-
-			log.Infof("UUID subnet added %s", subnet)
-		} else {
-			if subnetFilter != "" {
-				subnetFilter += ","
-			}
-
-			t := &url.URL{Path: subnet}
-			encodedSubnet := t.String()
-			subnetFilter += nameFilterPrefix + encodedSubnet
-		}
-	}
-
-	return subnetFilter
-}
-
 func (d *NutanixDriver) addGPUs(
 	ctx context.Context, conn *prismv3.Client, clusterUUID string, res *prismv3.VMResources,
 ) error {
@@ -1079,19 +994,6 @@ func (d *NutanixDriver) setHardwareFlags(opts drivers.DriverOptions) error {
 	return nil
 }
 
-func matchesSubnet(subnet *prismv3.SubnetIntentResponse, query, clusterUUID string) bool {
-	if *subnet.Spec.Name != query {
-		return false
-	}
-
-	kind := *subnet.Spec.Resources.SubnetType
-	if kind == "OVERLAY" {
-		return true
-	}
-
-	return kind == "VLAN" && *subnet.Spec.ClusterReference.UUID == clusterUUID
-}
-
 func (d *NutanixDriver) setCredentials(opts drivers.DriverOptions) error {
 	d.Username = opts.String("nutanix-username")
 	if d.Username == "" {
@@ -1115,7 +1017,9 @@ func (d *NutanixDriver) setCredentials(opts drivers.DriverOptions) error {
 	return nil
 }
 
-func (d *NutanixDriver) finishCreate(ctx context.Context, conn *prismv3.Client, resp *prismv3.VMIntentResponse) error {
+func (d *NutanixDriver) finishCreate(
+	ctx context.Context, conn *prismv3.Client, resp *prismv3.VMIntentResponse, subnetUUID string,
+) error {
 	if resp == nil || resp.Metadata == nil || resp.Metadata.UUID == nil || *resp.Metadata.UUID == "" {
 		return errInvalidVM
 	}
@@ -1139,5 +1043,5 @@ func (d *NutanixDriver) finishCreate(ctx context.Context, conn *prismv3.Client, 
 
 	log.Infof("VM %s successfully created", name)
 
-	return d.waitForIP(ctx, conn, vmUUID)
+	return d.waitForIP(ctx, conn, vmUUID, subnetUUID)
 }

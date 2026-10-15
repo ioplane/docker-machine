@@ -146,7 +146,7 @@ func TestCreateSharedDeadlinePreservesVM(t *testing.T) {
 			Status:   &prismv3.VMDefStatus{ExecutionContext: &prismv3.ExecutionContext{TaskUUID: "task-id"}},
 		}
 
-		err := node.finishCreate(ctx, conn, response)
+		err := node.finishCreate(ctx, conn, response, "management-subnet")
 		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != 7*time.Second ||
 			deletes != 0 || node.VMId != "vm-id" {
 			t.Fatalf("shared budget/identity: elapsed=%v deletes=%d vm=%s err=%v", time.Since(start), deletes, node.VMId, err)
