@@ -7,7 +7,8 @@ SOURCE_REVISION := $(shell git rev-parse HEAD)
 BUILD_CREATED := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir)
 GIT_DIR := $(shell git rev-parse --absolute-git-dir)
-PODMAN_RUN = $(PODMAN) run --rm --userns=keep-id:uid=0,gid=0 \
+# Default rootless mapping keeps the caller as container root without nested UID/GID remapping.
+PODMAN_RUN = $(PODMAN) run --rm \
 	-v "$(CURDIR):/src:z" -w /src \
 	-v ioplane-nutanix-driver-go-modules:/cache/modules \
 	-v ioplane-nutanix-driver-go-build:/cache/build
