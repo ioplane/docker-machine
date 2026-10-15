@@ -172,14 +172,16 @@ Upload builders читают текущий диапазон caller-owned regula
 
 ## Session SDK pin: этап v7
 
-Driver использует SDK `9bf301c039097f55ddfc5dddd8b15c03694b2ba8`, module
-`v0.8.3-0.20261015112743-9bf301c03909`, разрешённый через go list/GH API.
+Driver использует SDK `cfe9dabe248b1cf4d3dc84a83ec71589640a88ac`, module
+`v0.8.3-0.20261015113410-cfe9dabe248b`, разрешённый через go list/GH API.
 Общий v3/Konnector HTTP client синхронизирует session cookies, разделяет один
 refresh между одновременными401 одной session version и применяет одинаковый
 single-replay contract в Do и DoWithFilters. Отдельный ожидающий может отменить
 context; общий refresh ограничен context владельца. Non-replayable body,
 transport errors с неизвестным результатом и auth/GetBody errors повтор ресурса
-не запускают. Headers вызывающего кода сохраняются, исходные response bodies
+не запускают. Первая отправка сохраняет unauthenticated caller headers; session cookies
+заменяются только после401. Заранее построенные запросы со старой cookie
+используют уже завершённый refresh. Исходные response bodies
 закрываются по одному разу. Driver basic/API-key путь, RPC/config и queue JSON
 не меняются; session auth не включается принудительно.
 

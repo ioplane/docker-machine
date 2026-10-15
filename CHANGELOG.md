@@ -40,7 +40,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The immutable Prism SDK pin includes synchronized session cookies, coalesced refresh for concurrent explicit 401 responses, filtered-path parity and cancellation of waiters. Non-replayable bodies and unknown transport outcomes are not retried; driver auth configuration, RPC and VM queue fields are preserved.
+- The immutable Prism SDK pin includes synchronized session cookies, coalesced refresh for concurrent explicit 401 responses, filtered-path parity and cancellation of waiters. Initial unauthenticated cookie headers remain unchanged until an explicit 401. Non-replayable bodies and unknown transport outcomes are not retried; driver auth configuration, RPC and VM queue fields are preserved.
 
 - The immutable Prism SDK pin includes independent upload replay readers and correct remaining Content-Length; caller-owned regular files stay open across redirects. VM queue payloads and driver RPC/config fields are unchanged.
 
