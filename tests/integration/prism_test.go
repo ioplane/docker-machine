@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ const (
 	fixtureTimeoutSeconds = 5
 	fixtureKeyMode        = 0o600
 	fixtureNICCount       = 3
+	missingSubnetScenario = "missing-subnet"
 )
 
 type capturedNIC struct {
@@ -51,7 +53,7 @@ type capturedCreate struct {
 func TestPrismBoundary(t *testing.T) {
 	endpoint, client := startFixture(t)
 
-	for _, scenario := range []string{"queues", "429", "500", "malformed", "missing-metadata", "missing-subnet"} {
+	for _, scenario := range []string{"queues", "429", "500", "malformed", "missing-metadata", missingSubnetScenario} {
 		t.Run(scenario, func(t *testing.T) {
 			runScenario(t, client, endpoint, scenario)
 		})
@@ -98,14 +100,12 @@ func runScenario(t *testing.T, client *http.Client, endpoint, scenario string) {
 	requestFixture(t, client, endpoint+"/scenario", `{"scenario":"`+scenario+`"}`)
 
 	nodeDriver := newDriver(t, strings.TrimPrefix(endpoint, "https://"))
-	if scenario == "missing-subnet" {
+	if scenario == missingSubnetScenario {
 		nodeDriver.Subnet = append(nodeDriver.Subnet, "absent")
 	}
 
 	err := nodeDriver.Create()
-	if err == nil {
-		t.Fatal("fixture must reject Create")
-	}
+	assertScenarioError(t, scenario, err)
 
 	var captured capturedCreate
 
@@ -120,7 +120,7 @@ func runScenario(t *testing.T, client *http.Client, endpoint, scenario string) {
 func assertCapturedCreate(t *testing.T, captured capturedCreate, scenario string) {
 	t.Helper()
 
-	if scenario == "missing-subnet" {
+	if scenario == missingSubnetScenario {
 		if captured.Creates != 0 {
 			t.Fatalf("partial NIC profile reached create: %d", captured.Creates)
 		}
@@ -208,4 +208,30 @@ func newDriver(t *testing.T, endpoint string) *driver.NutanixDriver {
 	}
 
 	return nodeDriver
+}
+
+func assertScenarioError(t *testing.T, scenario string, err error) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("fixture must reject Create")
+	}
+
+	if scenario == "malformed" {
+		var syntaxError *json.SyntaxError
+
+		if !errors.Is(err, io.ErrUnexpectedEOF) && !errors.As(err, &syntaxError) {
+			t.Fatalf("malformed response lost decoder error: %v", err)
+		}
+
+		return
+	}
+
+	expected := map[string]string{
+		"queues": "task UUID", "429": "429", "500": "500",
+		"missing-metadata": "VM UUID", missingSubnetScenario: "network",
+	}
+	if !strings.Contains(err.Error(), expected[scenario]) {
+		t.Fatalf("scenario %s returned unexpected error: %v", scenario, err)
+	}
 }
