@@ -24,6 +24,7 @@ const (
 	fixtureDirectSubnet = "11111111-1111-1111-1111-111111111111"
 	fixtureKeyMode      = 0o600
 	fixtureMemoryMiB    = 2048
+	fixtureQueues       = "2"
 	fixtureDescription  = "offline payload fixture"
 )
 
@@ -86,7 +87,7 @@ func TestCreateCloudInitPayload(t *testing.T) {
 	t.Parallel()
 
 	fixture := newPayloadFixture(t, "")
-	d := payloadDriver(t, fixture.server, "2")
+	d := payloadDriver(t, fixture.server, fixtureQueues)
 	d.CloudInit = "#cloud-config\nusers:\n  - name: declared-user\n    shell: /bin/bash\n"
 
 	err := d.Create()
@@ -103,7 +104,7 @@ func TestCreateMalformedCloudInit(t *testing.T) {
 	t.Parallel()
 
 	fixture := newPayloadFixture(t, "")
-	d := payloadDriver(t, fixture.server, "2")
+	d := payloadDriver(t, fixture.server, fixtureQueues)
 	d.CloudInit = "#cloud-config\nusers: [\n"
 
 	err := d.Create()
@@ -453,5 +454,50 @@ func assertCloudInitUsers(t *testing.T, userData []byte) {
 
 	if root.Name != "root" || len(root.Keys) != 1 || root.Keys[0] != fixturePublicKey {
 		t.Fatal("merged cloud-init lost the injected root SSH key")
+	}
+}
+
+func TestCreateMissingMetadataReturnsError(t *testing.T) {
+	t.Parallel()
+	fixture := newPayloadFixture(t, "missing-metadata.json")
+	d := payloadDriver(t, fixture.server, fixtureQueues)
+
+	err := d.Create()
+	if err == nil {
+		t.Fatal("accepted missing VM metadata")
+	}
+}
+
+func TestCreateAcceptedIdentityRetained(t *testing.T) {
+	t.Parallel()
+	fixture := newPayloadFixture(t, "missing-task.json")
+	nodeDriver := payloadDriver(t, fixture.server, fixtureQueues)
+
+	err := nodeDriver.Create()
+	if err == nil {
+		t.Fatal("accepted missing task")
+	}
+
+	if nodeDriver.VMId != "fixture-vm" {
+		t.Fatalf("accepted identity lost: VMId=%q", nodeDriver.VMId)
+	}
+}
+
+func TestCreateMissingAdditionalSubnet(t *testing.T) {
+	t.Parallel()
+	fixture := newPayloadFixture(t, "")
+	d := payloadDriver(t, fixture.server, fixtureQueues)
+
+	d.Subnet = append(d.Subnet, "absent")
+
+	err := d.Create()
+	if err == nil {
+		t.Fatal("accepted partial NIC profile")
+	}
+
+	select {
+	case <-fixture.requests:
+		t.Fatal("partial NIC profile reached VM create API")
+	default:
 	}
 }

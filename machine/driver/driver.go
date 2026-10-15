@@ -30,6 +30,7 @@ import (
 var (
 	errDriverConfiguration   = errors.New("invalid Nutanix driver configuration")
 	errTaskFailed            = errors.New("nutanix task failed")
+	errInvalidVM             = errors.New("nutanix response contains no valid VM UUID")
 	errInvalidTask           = errors.New("nutanix response contains no valid task UUID")
 	errCloudInitSyntax       = errors.New("cloud-init syntax error")
 	errCreateTimeout         = errors.New("timeout waiting for vm to create")
@@ -720,7 +721,7 @@ func (d *NutanixDriver) addNICs(
 		}
 	}
 
-	if len(res.NicList) < 1 {
+	if len(res.NicList) != len(d.Subnet) {
 		log.Errorf("Network %s not found in cluster %s", d.Subnet, d.Cluster)
 
 		return fmt.Errorf("%w: network %s not found in cluster %s", errDriverConfiguration, d.Subnet, d.Cluster)
@@ -1213,8 +1214,14 @@ func (d *NutanixDriver) setCredentials(opts drivers.DriverOptions) error {
 }
 
 func (d *NutanixDriver) finishCreate(ctx context.Context, conn *prismv3.Client, resp *prismv3.VMIntentResponse) error {
+	if resp == nil || resp.Metadata == nil || resp.Metadata.UUID == nil || *resp.Metadata.UUID == "" {
+		return errInvalidVM
+	}
+
 	name := d.GetMachineName()
 	vmUUID := *resp.Metadata.UUID
+	// Retain accepted identity even when task validation or polling fails.
+	d.VMId = vmUUID
 
 	taskUUID, taskErr := vmTaskUUID(resp)
 	if taskErr != nil {
@@ -1227,8 +1234,6 @@ func (d *NutanixDriver) finishCreate(ctx context.Context, conn *prismv3.Client, 
 	if err != nil {
 		return err
 	}
-
-	d.VMId = vmUUID
 
 	log.Infof("VM %s successfully created", name)
 

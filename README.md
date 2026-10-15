@@ -143,6 +143,19 @@ make check
 `make check` runs tests, race detection, vet, golangci-lint v2, formatter checks,
 govulncheck and the build. It requires no Prism or Rancher credentials.
 The compatibility tests use an isolated subprocess and local HTTP fixtures.
+`make integration-build integration` additionally exercises the real SDK through
+one disposable Prism TLS container with Testcontainers v0.44.0. It requires an
+already running **rootless** Podman service and `PODMAN_SOCKET` pointing at its
+Unix socket. The test runner mounts this unprivileged socket only; rootful host
+sockets are rejected. On SELinux hosts the test runner may require a per-container
+label policy; host container configuration is not changed by these targets.
+`make integration-mod-check integration-quality` verifies the separate integration
+module, including all configured linters, formatting and test-aware govulncheck.
+Ryuk is disabled for the isolated suite; `CleanupContainer` owns normal cleanup.
+A killed test process can leave its fixture behind; use a disposable CI runner.
+
+The [pre-merge audit](docs/ru/premerge-audit.md) records remaining lifecycle risks.
+A passing mock suite is not a production acceptance result.
 
 The queue flag applies to every NIC created by this driver. It does not change
 existing VM hardware or guest channel settings. Rancher2 provider/schema/module

@@ -25,8 +25,12 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Malformed create metadata returns an error; an accepted VM identity survives
+  task validation failure; partially resolved NIC profiles are rejected before Create.
+- SDK non-2xx failures and response-body ownership are covered by regression tests.
+
 - Prism SDK transport isolation through the pinned `ioplane/prism-go-client`
-  revision `5af0cc292b31f2a02f190297ef6e2a0c8540de6d`, based on upstream `v0.8.2`;
+  revision `6b2d69446888d46e18658807aba51c8a6857b578`, based on upstream `v0.8.2`;
   concurrent clients retain separate TLS/proxy settings.
 - Missing task UUID returns an error; malformed cloud-init returns an error
   instead of terminating the driver. Diagnostic helpers omit credentials and
