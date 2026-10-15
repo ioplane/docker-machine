@@ -20,7 +20,7 @@ func (o benchmarkQueueOptions) Int(key string) int {
 }
 
 func BenchmarkQueueConfiguration(b *testing.B) {
-	for _, queues := range []string{"", "2"} {
+	for _, queues := range []string{"", "2", "0"} {
 		b.Run("queues="+queues, func(b *testing.B) {
 			options := benchmarkQueueOptions{queueOptions{queues: queues, sockets: 2, cores: 2}}
 
