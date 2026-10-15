@@ -122,6 +122,8 @@ github.com/hashicorp/go-cleanhttp v0.5.2 h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9n
 github.com/hashicorp/go-cleanhttp v0.5.2/go.mod h1:kO/YDlP8L1346E6Sodw+PrpBSV4/SoxCXGY6BqNFT48=
 github.com/ioplane/prism-go-client v0.8.3-0.20261015125745-70ca9c60ff06 h1:Sr29gpAf7ja2IYp4qZlzzxesRzAHWPQkvuMnunxXPDc=
 github.com/ioplane/prism-go-client v0.8.3-0.20261015125745-70ca9c60ff06/go.mod h1:daJeL1xdyiJdYeMkmCocaQKISkdOSGK5ekVwRcEYb2c=
+github.com/ioplane/rancher-machine v0.15.1-0.20261015203543-8661095ef1e0 h1:DCVNHWlXrGYfwqfXoCGx7pXtvNa8d8abBjjBPh0zV6U=
+github.com/ioplane/rancher-machine v0.15.1-0.20261015203543-8661095ef1e0/go.mod h1:05ufBIwBX2MUhD4F+kqd0XmrRE5I7USJpi34fbXHwes=
 github.com/jhump/protoreflect v1.14.0 h1:MBbQK392K3u8NTLbKOCIi3XdI+y+c6yt5oMq0X3xviw=
 github.com/jhump/protoreflect v1.14.0/go.mod h1:JytZfP5d0r8pVNLZvai7U/MCuTWITgrI4tTg7puQFKI=
 github.com/k0kubun/pp/v3 v3.1.0 h1:ifxtqJkRZhw3h554/z/8zm6AAbyO4LLKDlA5eV+9O8Q=
@@ -171,8 +173,6 @@ github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgr
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 h1:o4JXh1EVt9k/+g42oCprj/FisM4qX9L3sZB3upGN2ZU=
 github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55/go.mod h1:OmDBASR4679mdNQnz2pUhc2G8CO2JrUAVFDRBDP/hJE=
-github.com/rancher/machine v0.15.0-rancher145.2 h1:vTuDVCFjZCkaCrVZCLZrpWIcMReYrndMyMoMmlCZI6c=
-github.com/rancher/machine v0.15.0-rancher145.2/go.mod h1:itfr58EVWFa8X1BxOsN9Ftwjrcp46PNNQVSrOgZr3oo=
 github.com/shirou/gopsutil/v4 v4.26.6 h1:Mzr/npDtQC/xpeEuQKHZt8Zo9CmPvhTj8nkR8w5TLDs=
 github.com/shirou/gopsutil/v4 v4.26.6/go.mod h1:LZ6ewCSkBqUpvSOf+LsTGnRinC6iaNUNMGBtDkJBaLQ=
 github.com/shopspring/decimal v1.3.1/go.mod h1:DKyhrW/HYNuLGql+MJL6WCR6knT2jwCFRcu2hWCYk4o=

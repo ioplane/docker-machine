@@ -77,12 +77,13 @@ benchmark:
 
 # Testcontainers uses an unprivileged Podman service, never the host root socket.
 PODMAN_SOCKET ?= $(XDG_RUNTIME_DIR)/podman/podman.sock
-integration-build:
+integration-build: build
+	$(DEV_RUN) sh -ec 'consumer_dir=$$(go list -m -f "{{.Dir}}" github.com/rancher/machine); cd "$$consumer_dir"; CGO_ENABLED=0 go build -trimpath -o /src/build/rancher-machine ./cmd/rancher-machine'
 	$(DEV_RUN) env CGO_ENABLED=0 go build -trimpath -o build/prism-fixture ./tests/integration/fixture/main.go
 	$(PODMAN) build --ignorefile tests/integration/fixture.containerignore -f tests/integration/Containerfile.fixture -t localhost/ioplane-prism-fixture:premerge .
 
 integration-mod-check:
-	$(DEV_RUN) sh -ec 'go list -m -f "{{with .Replace}}{{.Path}} {{.Version}}{{end}}" github.com/nutanix-cloud-native/prism-go-client > /tmp/driver-sdk; cd tests/integration; go list -m -f "{{with .Replace}}{{.Path}} {{.Version}}{{end}}" github.com/nutanix-cloud-native/prism-go-client > /tmp/integration-sdk; cmp /tmp/driver-sdk /tmp/integration-sdk; cp go.mod /tmp/integration.mod; cp go.sum /tmp/integration.sum; GOFLAGS=-buildvcs=false go mod tidy; cmp /tmp/integration.mod go.mod; cmp /tmp/integration.sum go.sum; go mod verify; go vet ./...; go test -run "^$$" ./...'
+	$(DEV_RUN) sh -ec 'go list -m -f "{{with .Replace}}{{.Path}} {{.Version}}{{end}}" github.com/nutanix-cloud-native/prism-go-client github.com/rancher/machine > /tmp/driver-sdk; cd tests/integration; go list -m -f "{{with .Replace}}{{.Path}} {{.Version}}{{end}}" github.com/nutanix-cloud-native/prism-go-client github.com/rancher/machine > /tmp/integration-sdk; cmp /tmp/driver-sdk /tmp/integration-sdk; cp go.mod /tmp/integration.mod; cp go.sum /tmp/integration.sum; GOFLAGS=-buildvcs=false go mod tidy; cmp /tmp/integration.mod go.mod; cmp /tmp/integration.sum go.sum; go mod verify; go vet ./...; go test -run "^$$" ./...'
 
 integration:
 	@test "$$($(PODMAN) info --format '{{.Host.Security.Rootless}}')" = true

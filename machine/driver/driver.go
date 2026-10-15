@@ -99,6 +99,8 @@ type NutanixDriver struct {
 	GPUs             []string
 	Description      string
 	prepared         *preparedCreate
+
+	ConsumerCreateBinding string `json:"consumerCreateBinding,omitempty"`
 }
 
 // NewDriver create new instance.

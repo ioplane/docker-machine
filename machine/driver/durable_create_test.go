@@ -189,7 +189,7 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 		writeRemovalResponse(t, writer, map[string]any{
 			"metadata": map[string]string{"uuid": durableVMUUID},
 			"spec":     map[string]any{"name": name, "cluster_reference": map[string]string{"uuid": "cluster-id"}},
-			"status": map[string]any{"state": "COMPLETE", "resources": map[string]any{"nic_list": []any{
+			"status": map[string]any{"state": "COMPLETE", "resources": map[string]any{"power_state": "ON", "nic_list": []any{
 				map[string]any{"subnet_reference": map[string]string{"uuid": fixtureDirectSubnet}, "ip_endpoint_list": endpoints},
 			}}},
 		})

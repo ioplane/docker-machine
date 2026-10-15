@@ -40,15 +40,16 @@ var errCreateRecovery = errors.New("nutanix Create recovery requires reconciliat
 
 // The journal is independent of the consumer's config.json, which is not saved on failed Create.
 type createJournal struct {
-	Version     int       `json:"version"`
-	Binding     string    `json:"binding"`
-	Phase       string    `json:"phase"`
-	ClientID    string    `json:"clientId"`
-	VMUUID      string    `json:"vmUuid"`
-	SubnetUUID  string    `json:"subnetUuid"`
-	ClusterUUID string    `json:"clusterUuid"`
-	TaskUUID    string    `json:"taskUuid"`
-	Expires     time.Time `json:"expires"`
+	Version      int       `json:"version"`
+	Binding      string    `json:"binding"`
+	Phase        string    `json:"phase"`
+	ClientID     string    `json:"clientId"`
+	VMUUID       string    `json:"vmUuid"`
+	SubnetUUID   string    `json:"subnetUuid"`
+	ClusterUUID  string    `json:"clusterUuid"`
+	TaskUUID     string    `json:"taskUuid"`
+	Expires      time.Time `json:"expires"`
+	ConsumerMode string    `json:"consumerMode,omitempty"`
 }
 
 type journalStore struct {
@@ -59,6 +60,26 @@ type journalStore struct {
 }
 
 func (d *NutanixDriver) openCreateJournal(ctx context.Context) (*journalStore, error) {
+	store, err := d.loadCreateJournal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if store.journal != nil {
+		store.binding, err = d.createBinding()
+		if err == nil {
+			err = store.journal.validate(store.binding)
+		}
+
+		if err != nil {
+			return nil, errors.Join(err, store.close())
+		}
+	}
+
+	return store, nil
+}
+
+func (d *NutanixDriver) loadCreateJournal(ctx context.Context) (*journalStore, error) {
 	if d.BaseDriver == nil || d.StorePath == "" || !filepath.IsLocal(d.MachineName) ||
 		filepath.Base(d.MachineName) != d.MachineName || d.MachineName == "." {
 		return nil, fmt.Errorf("%w: invalid machine journal path", errDriverConfiguration)
@@ -79,17 +100,6 @@ func (d *NutanixDriver) openCreateJournal(ctx context.Context) (*journalStore, e
 	err = store.load()
 	if err != nil {
 		return nil, errors.Join(err, store.close())
-	}
-
-	if store.journal != nil {
-		store.binding, err = d.createBinding()
-		if err == nil {
-			err = store.journal.validate(store.binding)
-		}
-
-		if err != nil {
-			return nil, errors.Join(err, store.close())
-		}
 	}
 
 	return store, nil
@@ -192,7 +202,7 @@ func (s *journalStore) load() (result error) {
 
 func (j *createJournal) validate(binding string) error {
 	valid := j.Version == journalVersion && j.Binding == binding && isUUID(j.ClientID) &&
-		j.SubnetUUID != "" && j.ClusterUUID != ""
+		j.SubnetUUID != "" && j.ClusterUUID != "" && (j.ConsumerMode == "" || j.ConsumerMode == consumerRecoveryMode)
 	switch j.Phase {
 	case phaseAllocating:
 		valid = valid && j.VMUUID == "" && j.TaskUUID == ""
@@ -265,8 +275,12 @@ func (d *NutanixDriver) createBinding() (string, error) {
 		"storage": d.StorageContainer, "diskSize": d.DiskSize, "cloudInit": d.CloudInit,
 		"serial": d.SerialPort, "project": d.Project, "boot": d.BootType,
 		"gpus": d.GPUs, "description": d.Description,
-		"sshUser": d.SSHUser, "sshPasswordDigest": hex.EncodeToString(passwordDigest[:]),
+		"sshUser": d.GetSSHUsername(), "sshPasswordDigest": hex.EncodeToString(passwordDigest[:]),
 		"publicKeyDigest": hex.EncodeToString(keyDigest[:]),
+	}
+
+	if d.ConsumerCreateBinding != "" {
+		intent["consumerCreateBinding"] = d.ConsumerCreateBinding
 	}
 
 	data, err := json.Marshal(intent)
