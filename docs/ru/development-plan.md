@@ -64,3 +64,14 @@ Optional `nutanix-vm-nic-queues` отсутствует по умолчанию.
 не больше sockets × cores; переполнение отклоняется до Create. Применение ко
 всем NIC не доказывает guest channels/IRQ или throughput. Schema/provider/module
 mapping, cold boot/join и PC/guest readback относятся к последующим этапам.
+
+## W0: воспроизводимые измерения
+
+`make benchmark-check` проверяет assertions стенда с race detector;
+`make benchmark` сохраняет пять выборок при GOMAXPROCS=4, 100 ms на
+benchmark. Время не является CI threshold. Все команды исполняются через
+существующий pinned Podman image. Производительность production из этих
+fixtures не выводится. Compiler/module/API inventory собирается средствами
+`go list -export -compiled -deps -test -json`, `go list -m -json all` и
+`go doc -all` отдельно для каждого Go module. Числа и границы измерения
+публикуются в каноническом плане um-docs; полные исходные результаты локальны.
