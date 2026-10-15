@@ -21,22 +21,26 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nutanix/docker-machine/machine/driver"
+	machinehost "github.com/rancher/machine/libmachine/host"
+	"github.com/rancher/machine/libmachine/persist"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
 const (
 	consumerCompletePUT      = 3
 	rotatedFixtureCredential = "rotated"
 	consumerMode             = "ssh-custom-script/v1"
+	checkpointNamespace      = "test"
+	checkpointMachineName    = "test"
+	checkpointSecretName     = "machine"
 )
 
 var errConsumerCheckpoint = errors.New("invalid consumer checkpoint")
-
-type checkpointSecret struct {
-	APIVersion string            `json:"apiVersion"`
-	Kind       string            `json:"kind"`
-	Metadata   map[string]string `json:"metadata"`
-	Data       map[string][]byte `json:"data,omitempty"`
-}
 
 type consumerDriverState struct {
 	VMID     string `json:"vmId"`
@@ -65,11 +69,12 @@ type consumerInputPaths struct {
 
 type checkpointAPI struct {
 	mu         sync.Mutex
-	secret     checkpointSecret
+	secret     corev1.Secret
 	puts       int
 	first      consumerCheckpoint
 	checkpoint chan error
 	complete   chan error
+	wireTypes  []string
 }
 
 func (s *checkpointAPI) validate(snapshot *consumerCheckpoint) error {
@@ -107,7 +112,7 @@ func (s *checkpointAPI) serve(writer http.ResponseWriter, request *http.Request)
 	defer s.mu.Unlock()
 
 	if request.Method == http.MethodGet {
-		encodeCheckpointSecret(writer, s.secret)
+		encodeCheckpointSecret(writer, &s.secret)
 
 		return
 	}
@@ -118,9 +123,8 @@ func (s *checkpointAPI) serve(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	var next checkpointSecret
-
-	err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20)).Decode(&next)
+	s.wireTypes = append(s.wireTypes, request.Header.Get("Content-Type"))
+	next, err := decodeCheckpointSecret(writer, request)
 
 	var snapshot consumerCheckpoint
 	if err == nil {
@@ -150,7 +154,7 @@ func (s *checkpointAPI) serve(writer http.ResponseWriter, request *http.Request)
 
 		return
 	default:
-		err = fmt.Errorf("%writer: extra Secret PUT", errConsumerCheckpoint)
+		err = fmt.Errorf("%w: extra Secret PUT", errConsumerCheckpoint)
 	}
 
 	if err != nil {
@@ -159,16 +163,33 @@ func (s *checkpointAPI) serve(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	encodeCheckpointSecret(writer, next)
+	encodeCheckpointSecret(writer, &next)
 }
 
-func encodeCheckpointSecret(w http.ResponseWriter, secret checkpointSecret) {
+func encodeCheckpointSecret(w http.ResponseWriter, secret *corev1.Secret) {
 	err := json.NewEncoder(w).Encode(secret)
 	if err != nil {
 		http.Error(w, "fixture secret encoding failed", http.StatusInternalServerError)
 
 		return
 	}
+}
+
+func decodeCheckpointSecret(writer http.ResponseWriter, request *http.Request) (corev1.Secret, error) {
+	var secret corev1.Secret
+
+	data, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 4<<20))
+	if err == nil {
+		scheme := runtime.NewScheme()
+		scheme.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.Secret{})
+		_, _, err = serializer.NewCodecFactory(scheme).UniversalDeserializer().Decode(data, nil, &secret)
+	}
+
+	if err != nil {
+		return secret, fmt.Errorf("decode Secret PUT (Content-Type %q): %w", request.Header.Get("Content-Type"), err)
+	}
+
+	return secret, nil
 }
 
 func readConsumerCheckpoint(data []byte) (_ consumerCheckpoint, resultErr error) {
@@ -246,9 +267,9 @@ func runCLISecretRecovery(t *testing.T, client *http.Client, endpoint string) {
 	requestFixture(t, client, endpoint+"/scenario", `{"scenario":"crash"}`)
 
 	api := &checkpointAPI{
-		secret: checkpointSecret{
-			APIVersion: "v1", Kind: "Secret",
-			Metadata: map[string]string{"name": "machine", "namespace": "test", "resourceVersion": "1"}, Data: nil,
+		secret: corev1.Secret{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+			ObjectMeta: metav1.ObjectMeta{Name: checkpointSecretName, Namespace: checkpointNamespace, ResourceVersion: "1"},
 		},
 		checkpoint: make(chan error, 1), complete: make(chan error, 2),
 	}
@@ -360,13 +381,13 @@ func startConsumerCLI(t *testing.T, endpoint, store, kubeconfig, script, credent
 	binary := filepath.Join(build, "rancher-machine")
 	//nolint:gosec // Executable and arguments are fixed fixture-owned build output and local test paths.
 	cmd := exec.CommandContext(t.Context(), binary, "-D", "--storage-path", store,
-		"--secret-name", "machine", "--secret-namespace", "test", "--kubeconfig", kubeconfig,
+		"--secret-name", checkpointSecretName, "--secret-namespace", checkpointNamespace, "--kubeconfig", kubeconfig,
 		"create", "--driver", "nutanix", "--custom-install-script", script, "--hostname-override", "test-node",
 		"--nutanix-endpoint", host, "--nutanix-port", port,
 		"--nutanix-username", credentials, "--nutanix-password", credentials,
 		"--nutanix-insecure", "--nutanix-cluster", "test-only", "--nutanix-vm-image", "test-only",
 		"--nutanix-vm-network", "overlay", "--nutanix-vm-cpus", "2",
-		"--nutanix-vm-cores", "2", "--nutanix-vm-mem", "2048", "test")
+		"--nutanix-vm-cores", "2", "--nutanix-vm-mem", "2048", checkpointMachineName)
 
 	cmd.Env = append(os.Environ(), "PATH="+build+":"+os.Getenv("PATH"))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -433,5 +454,72 @@ func awaitCheckpoint(t *testing.T, signal <-chan error) {
 		}
 	case <-time.After(time.Minute):
 		t.Fatal("CLI checkpoint deadline exceeded")
+	}
+}
+
+func TestSecretStoreCheckpointWire(t *testing.T) {
+	t.Parallel()
+
+	api := &checkpointAPI{
+		secret: corev1.Secret{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+			ObjectMeta: metav1.ObjectMeta{Name: checkpointSecretName, Namespace: checkpointNamespace, ResourceVersion: "1"},
+		},
+		checkpoint: make(chan error, 1), complete: make(chan error, 2),
+	}
+	server := httptest.NewServer(http.HandlerFunc(api.serve))
+	t.Cleanup(server.Close)
+	paths := consumerInputs(t, server.URL)
+	machine := filepath.Join(paths.store, "machines", checkpointMachineName)
+
+	err := os.MkdirAll(machine, fixtureDirectoryMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"nutanix-create.json": `{"phase":"reserved","vmUuid":"` + expectedRecoveryUUID +
+			`","consumerMode":"` + consumerMode + `"}`,
+		"id_rsa": "fixture-private", "id_rsa.pub": "fixture-public",
+	}
+	for name, content := range files {
+		err = os.WriteFile(filepath.Join(machine, name), []byte(content), fixtureKeyMode)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	store, err := persist.NewSecretStore(persist.NewFilestore(paths.store, "", ""),
+		checkpointSecretName, checkpointNamespace, paths.kubeconfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node := driver.NewDriver(checkpointMachineName, paths.store)
+	node.ConsumerCreateBinding = "fixture-proof"
+	err = store.Save(&machinehost.Host{Name: checkpointMachineName, DriverName: "nutanix", Driver: node})
+
+	api.mu.Lock()
+	wireTypes := append([]string(nil), api.wireTypes...)
+	api.mu.Unlock()
+	t.Logf("Secret PUT Content-Type: %q", wireTypes)
+
+	if len(wireTypes) != 1 || wireTypes[0] != runtime.ContentTypeProtobuf {
+		t.Fatalf("actual SecretStore did not exercise protobuf PUT: %q", wireTypes)
+	}
+
+	var checkpointErr error
+	select {
+	case checkpointErr = <-api.checkpoint:
+	default:
+		t.Fatal("Secret PUT did not notify checkpoint handler")
+	}
+
+	if err != nil {
+		t.Fatalf("actual SecretStore Save: %v; checkpoint decoder: %v", err, checkpointErr)
+	}
+
+	if checkpointErr != nil {
+		t.Fatal(checkpointErr)
 	}
 }

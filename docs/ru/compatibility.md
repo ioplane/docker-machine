@@ -255,3 +255,10 @@ allocator POST, один VM POST, ноль DELETE, только owned-UUID recov
 реальный plugin; `make integration` выполняет сценарий в существующем
 Testcontainers suite на rootless Podman CI. Rootful host runtime не заменяет эту
 приёмку и не перенастраивается ради теста.
+
+Kubernetes fixture использует `core/v1.Secret` и официальный
+`UniversalDeserializer`: JSON responses и фактические protobuf Secret PUT
+поддерживаются без изменения настроек consumer. Отдельный offline-тест
+`TestSecretStoreCheckpointWire` выполняет настоящий `NewSecretStore.Save` через
+локальный HTTP fixture и проверяет protobuf Content-Type; он не заменяет
+приёмку CLI recovery в Testcontainers.
