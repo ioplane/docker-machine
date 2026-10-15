@@ -14,6 +14,9 @@ import (
 
 const (
 	gpuFixtureName           = "A"
+	gpuFixtureUnused         = "UNUSED"
+	gpuFixtureMode           = "PASSTHROUGH"
+	gpuFixtureVendor         = "NVIDIA"
 	gpuFixtureDeviceA  int64 = 11
 	gpuFixtureDeviceB  int64 = 22
 	uuidAllocationRuns       = 1000
@@ -114,8 +117,8 @@ func assertGPUResult(t *testing.T, result []*prism.VMGpu, err error, want []int6
 
 	ids := make([]int64, 0, len(result))
 	for _, gpu := range result {
-		if gpu.DeviceID == nil || gpu.Mode == nil || *gpu.Mode != "PASSTHROUGH" ||
-			gpu.Vendor == nil || *gpu.Vendor != "NVIDIA" {
+		if gpu.DeviceID == nil || gpu.Mode == nil || *gpu.Mode != gpuFixtureMode ||
+			gpu.Vendor == nil || *gpu.Vendor != gpuFixtureVendor {
 			t.Fatalf("GPU selection lost fields: %+v", gpu)
 		}
 
@@ -137,9 +140,15 @@ func gpuInventoryFixture(t *testing.T) string {
 	gpus := []*prism.GPU{
 		nil,
 		{Name: gpuFixtureName, Status: "IN_USE"},
-		{Name: gpuFixtureName, Status: "UNUSED", DeviceID: new(gpuFixtureDeviceA), Mode: "PASSTHROUGH", Vendor: "NVIDIA"},
-		{Name: "B", Status: "UNUSED", DeviceID: new(gpuFixtureDeviceB), Mode: "PASSTHROUGH", Vendor: "NVIDIA"},
-		{Name: "broken", Status: "UNUSED"},
+		{
+			Name: gpuFixtureName, Status: gpuFixtureUnused, DeviceID: new(gpuFixtureDeviceA),
+			Mode: gpuFixtureMode, Vendor: gpuFixtureVendor,
+		},
+		{
+			Name: "B", Status: gpuFixtureUnused, DeviceID: new(gpuFixtureDeviceB),
+			Mode: gpuFixtureMode, Vendor: gpuFixtureVendor,
+		},
+		{Name: "broken", Status: gpuFixtureUnused},
 		{Name: "busy", Status: "IN_USE"},
 	}
 	inventory := prism.HostListResponse{Entities: []*prism.HostResponse{
@@ -147,8 +156,8 @@ func gpuInventoryFixture(t *testing.T) string {
 		{Status: &prism.HostStatus{
 			ClusterReference: &prism.ReferenceValues{UUID: "another-pe"},
 			Resources: &prism.HostResources{GPUList: []*prism.GPU{{
-				Name: gpuFixtureName, Status: "UNUSED", DeviceID: new(gpuFixtureDeviceB),
-				Mode: "PASSTHROUGH", Vendor: "NVIDIA",
+				Name: gpuFixtureName, Status: gpuFixtureUnused, DeviceID: new(gpuFixtureDeviceB),
+				Mode: gpuFixtureMode, Vendor: gpuFixtureVendor,
 			}}},
 		}},
 		{Status: &prism.HostStatus{
