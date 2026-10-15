@@ -151,7 +151,9 @@ client ID до allocator POST, выделенный VM UUID, cluster, management
 task и фазу операции. Хеш намерения связывает endpoint, machine, профиль VM,
 cloud-init, SSH user/password и содержимое публичного SSH key. Секреты,
 публичный ключ и raw userdata в журнал не записываются; consumer config.json
-не перезаписывается. Потерянный allocator response восстанавливается через GET
+не перезаписывается. До API проверяются читаемость и формат обоих SSH keys,
+соответствие private/public pair; отсутствующий, повреждённый или чужой private
+key блокирует восстановление. Потерянный allocator response восстанавливается через GET
 того же client ID; после VM POST возможен только GET точного выделенного UUID.
 GET404 после неопределённого VM outcome не разрешает повторный POST.
 Remove также сохраняет этот журнал и возвращает ошибку при GET404, пока
@@ -175,7 +177,8 @@ symlink/hardlink либо небезопасные права блокируют
 management-подсети. Отсутствие IP не вызывает удаления.
 Локальный restart сохраняет StorePath; замена процесса может восстановить
 тот же pre-Create machine checkpoint с журналом и ключами. TC проверяет
-driver-level restore старого checkpoint в новый store после SIGKILL. Это
+driver-level restore копии старого checkpoint в новый StorePath после SIGKILL
+с явным переносом SSHKeyPath в test fixture. Это
 этап `um-docs-nrsu.4.8.1.1`; реальный Rancher CLI отказывает при Exists(name)
 до driver hook. Автоматический consumer resume и приёмка Job/pod/controller
 остаются `um-docs-nrsu.4.8.1.2`; родительская `um-docs-nrsu.4.8.1` не закрыта.

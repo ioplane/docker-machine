@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	fixturePublicKey    = "fixture-public-key"
+	fixturePublicKey    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtqJ7zOtqQtYqOo0CpvDXNlMhV3HeJDpjrASKGLWdop"
 	fixtureDirectSubnet = "11111111-1111-1111-1111-111111111111"
 	fixtureKeyMode      = 0o600
 	fixtureMemoryMiB    = 2048
@@ -265,7 +265,7 @@ func payloadDriver(t *testing.T, server *httptest.Server, queues string) *driver
 	nodeDriver.Description = fixtureDescription
 	nodeDriver.Subnet = []string{fixtureDirectSubnet, "vlan", "overlay"}
 	nodeDriver.SSHKeyPath = filepath.Join(t.TempDir(), "id_rsa")
-	writeFixtureKey(t, nodeDriver.SSHKeyPath, "fixture-placeholder")
+	writeFixtureKey(t, nodeDriver.SSHKeyPath, fixturePrivateKey(t, 0))
 	writeFixtureKey(t, nodeDriver.SSHKeyPath+".pub", fixturePublicKey)
 
 	return nodeDriver
@@ -276,7 +276,7 @@ func writeFixtureKey(t *testing.T, path, content string) {
 
 	err := os.WriteFile(path, []byte(content), fixtureKeyMode)
 	if err != nil {
-		t.Fatalf("write placeholder key: %v", err)
+		t.Fatalf("write fixture key: %v", err)
 	}
 }
 
