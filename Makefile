@@ -82,7 +82,7 @@ integration-build:
 	$(PODMAN) build --ignorefile tests/integration/fixture.containerignore -f tests/integration/Containerfile.fixture -t localhost/ioplane-prism-fixture:premerge .
 
 integration-mod-check:
-	$(DEV_RUN) sh -ec 'cd tests/integration; cp go.mod /tmp/integration.mod; cp go.sum /tmp/integration.sum; GOFLAGS=-buildvcs=false go mod tidy; cmp /tmp/integration.mod go.mod; cmp /tmp/integration.sum go.sum; go mod verify; go vet ./...; go test -run "^$$" ./...'
+	$(DEV_RUN) sh -ec 'go list -m -f "{{with .Replace}}{{.Path}} {{.Version}}{{end}}" github.com/nutanix-cloud-native/prism-go-client > /tmp/driver-sdk; cd tests/integration; go list -m -f "{{with .Replace}}{{.Path}} {{.Version}}{{end}}" github.com/nutanix-cloud-native/prism-go-client > /tmp/integration-sdk; cmp /tmp/driver-sdk /tmp/integration-sdk; cp go.mod /tmp/integration.mod; cp go.sum /tmp/integration.sum; GOFLAGS=-buildvcs=false go mod tidy; cmp /tmp/integration.mod go.mod; cmp /tmp/integration.sum go.sum; go mod verify; go vet ./...; go test -run "^$$" ./...'
 
 integration:
 	@test "$$($(PODMAN) info --format '{{.Host.Security.Rootless}}')" = true

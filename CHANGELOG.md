@@ -40,6 +40,10 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The isolated Testcontainers module uses the same immutable SDK revision as the driver; integration module validation rejects divergent replacements before compiling fixtures. Earlier boundary runs used its older SDK pin.
+
+- One validated operation deadline covers constructor authentication, HTTP body reads, task/IP polling and both Restart transitions. v3 FAILED/ABORTED and malformed task responses fail immediately; only transient observation HTTP statuses retry with bounded jitter. Successful power tasks require the observed power state. Create failures and missing IP never trigger automatic VM deletion; accepted VM identity is retained.
+
 - The immutable Prism SDK pin includes context-aware constructor/cache entrypoints, coalesced client creation and protection against stale publication after Delete. Failed replacement retains the previous client; only SDK-owned v3 idle transports are retired. Driver RPC, VM queue fields and default operation deadlines remain unchanged.
 
 - The immutable Prism SDK pin includes synchronized session cookies, coalesced refresh for concurrent explicit 401 responses, filtered-path parity and cancellation of waiters. Initial unauthenticated cookie headers remain unchanged until an explicit 401. Non-replayable bodies and unknown transport outcomes are not retried; driver auth configuration, RPC and VM queue fields are preserved.

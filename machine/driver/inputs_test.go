@@ -19,6 +19,9 @@ func TestCreateInvalidInputsBeforeAPI(t *testing.T) {
 		state string
 		cloud string
 	}{
+		{name: "zero persisted timeout", state: `{"Timeout":0}`},
+		{name: "negative persisted timeout", state: `{"Timeout":-1}`},
+		{name: "overflowing persisted timeout", state: `{"Timeout":9223372037}`},
 		{name: "zero sockets without queues", state: `{"VMVCPUs":0}`},
 		{name: "negative cores without queues", state: `{"VMCores":-1}`},
 		{name: "CPU product overflow", state: `{"VMVCPUs":9223372036854775807,"VMCores":2}`},

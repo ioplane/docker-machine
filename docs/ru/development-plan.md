@@ -1,4 +1,4 @@
-# Nutanix node driver: план модернизации v8
+# Nutanix node driver: план модернизации v9
 
 Дата: 2026-10-15. Источник задач — локальный Beads `um-docs-nrsu` в um-docs.
 [Полный план, инфраструктурные эпики и критерии](https://um-git.infra4.dev/p.lavrukhin/um-docs/-/blob/sprint/nutanix-premerge-2026-10-15/docs/plans/nutanix-rke2-modernization/README.md).
@@ -216,3 +216,40 @@ Driver Go/RPC/config/VM queue payload и auth defaults в этом pin batch н�
 um-docs-nrsu.4.8.2 с явным threading operation context. Обязательные make check,
 strict lint/RPC и rootless Testcontainers проверяют текущий consumer; full SDK
 strict quality/Sonar и merge/release/live acceptance остаются отдельными gates.
+
+
+## Deadline и автомат задач: этап v9
+
+`um-docs-nrsu.4.8.2`: один deadline покрывает constructor auth, lookup/submit,
+HTTP response body, task polling и ожидание IP; обе фазы Restart используют
+тот же бюджет. Сохранённые timeout ≤0 и переполнение Duration отклоняются до API.
+CLI сохраняет прежний минимум 300 секунд. Context не входит в RPC/config JSON.
+
+Источник v3: pinned SDK `v3/swagger.json`, `definitions.task.properties.status`:
+QUEUED/RUNNING/SUSPENDED ожидаются; SUCCEEDED завершает task; FAILED/ABORTED
+возвращают ошибку. Отсутствующий или неизвестный status отклоняется; CANCELED из
+v4 не переносится в v3. Raw error_detail в диагностику не выводится.
+Context7 `/golang/go`: context.WithTimeout, HTTP body cancellation и synctest;
+Nutanix MCP TN-2209 содержит v4 guidance и не подтверждает enum v3.
+
+Повторяются только GET-наблюдения с HTTP 429/500/502/503/504, с jitter 5–10 секунд
+внутри общего бюджета. 403/404, ошибки схемы и transport outcome возвращаются
+без повторной подачи mutation. После power task дополнительно проверяется
+status.resources.power_state. Отмена либо исчерпание срока не означают отмену
+операции на сервере: VMId сохраняется, автоматического DeleteVM нет.
+Durable task identity и reconciliation после перезапуска — отдельный4.8.1;
+первый NIC пока сохраняет прежнюю роль, identity selector — следующий4.8.3.
+
+RED: три invalid persisted timeout сделали по4 API requests в старом коде.
+Критичные проверки включают synthetic shared task/IP budget7s, terminal/unknown/
+missing/null task, 403, transient retry, throttling deadline, cancellation,
+TLS body stall и observed power state. Полная проверка и CI фиксируются отдельно
+по опубликованному SHA; merge, release и live changes не выполняются.
+
+
+Проверка nested module выявила прежний pin Testcontainers
+`v0.8.3-0.20261015010339-eefdc324a6c3`, тогда как root module уже использовал
+`v0.8.3-0.20261015125745-70ca9c60ff06`. Поэтому прежние TC receipts не доказывают
+интеграцию нового SDK. Pin выровнен; integration-mod-check сравнивает replacement
+Path/Version обоих module graph перед tidy/verify/compile. Требуется новый TC
+прогон по итоговому driver SHA.
