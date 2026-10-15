@@ -84,7 +84,7 @@ jobs:
           COMMIT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          export GOVERNANCE_TITLE="deliberately invalid title"
+          export GOVERNANCE_TITLE="$PR_TITLE"
           export GOVERNANCE_TITLES="$(git log --no-merges --format=%s "$COMMIT_BASE..$COMMIT_HEAD")"
           test -n "$GOVERNANCE_TITLES"
           make governance
