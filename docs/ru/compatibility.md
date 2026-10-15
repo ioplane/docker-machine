@@ -262,3 +262,10 @@ Kubernetes fixture использует `core/v1.Secret` и официальны
 `TestSecretStoreCheckpointWire` выполняет настоящий `NewSecretStore.Save` через
 локальный HTTP fixture и проверяет protobuf Content-Type; он не заменяет
 приёмку CLI recovery в Testcontainers.
+
+После SIGKILL группы завершение CLI не заменяет проверку plugin listeners.
+Проверка закрытия ограничена отдельным cleanup context на 5 s, включая вызов из
+`t.Cleanup` после отмены test context. Только `ECONNREFUSED` подтверждает закрытие;
+отмена, deadline и другие сетевые ошибки остаются отказами. Локальный тест с
+настоящим plugin удерживает успешную TCP-пробу до SIGKILL/reap, затем проверяет
+закрытие, отмену ожидания при живом listener и сохранение посторонних dial errors.
