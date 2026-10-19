@@ -1,6 +1,32 @@
 # Контракт совместимости
 
-Дата проверки исходников: 2026-10-15.
+Дата проверки исходников: 2026-10-19.
+
+## Текущее закрепление SDK: 2026-10-19
+
+Root и isolated integration module используют
+`github.com/ioplane/prism-go-client v0.8.3-0.20261019074702-f9d6c857660c`,
+commit `f9d6c857660c455fbc5747676de09b1794375502`.
+Это текущее закрепление; более ранние SHA ниже относятся к соответствующим этапам.
+Module path и imports сохраняют `github.com/nutanix-cloud-native/prism-go-client`.
+Источник закрепления — `go list -m -json` по полному SHA в declared Podman image;
+origin указывает на [этот commit](https://github.com/ioplane/prism-go-client/commit/f9d6c857660c455fbc5747676de09b1794375502).
+
+Ошибки request URL, HTTP transport и endpoint parsing используют постоянный
+текст без URL и query values. Прямые assertions `*url.Error` и сопоставление
+прежних диагностических строк требуется заменить на `errors.As`/`errors.Is`;
+причины, direct `net.Error` classification и `os.IsTimeout` сохранены.
+Извлечённые URL и причины могут содержать credentials и не предназначены для log.
+Драйвер использует typed HTTP status classification; затронутых прямых
+assertions и сопоставлений URL diagnostics в его исходниках не обнаружено.
+SDK также сохраняет private default transport при nil RoundTripper и продолжает
+provider lookup после wrapped `ErrNotFound`; nil inputs и v4 metadata обрабатываются
+без прежних panic. Источник — [SDK changelog](https://github.com/ioplane/prism-go-client/blob/f9d6c857660c455fbc5747676de09b1794375502/CHANGELOG.md).
+
+RPC, persisted JSON и отсутствие queue field по умолчанию сохраняются.
+Consumer остаётся на `8661095ef1e05265e5c7b7bc212fc473c6e59a7c`:
+отличие от `f32a8e60ec01610f88a7ac8bb4bc673cfc63abdd` ограничено README и
+CHANGELOG; runtime inputs не изменены.
 
 ## Rancher и исполняемый driver
 

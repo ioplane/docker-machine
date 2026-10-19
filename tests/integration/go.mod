@@ -125,6 +125,6 @@ replace github.com/nutanix/docker-machine => ../..
 
 replace github.com/urfave/cli => github.com/urfave/cli v1.11.1-0.20151120215642-0302d3914d2a
 
-replace github.com/nutanix-cloud-native/prism-go-client => github.com/ioplane/prism-go-client v0.8.3-0.20261015222455-d4df6f8a97b0
+replace github.com/nutanix-cloud-native/prism-go-client => github.com/ioplane/prism-go-client v0.8.3-0.20261019074702-f9d6c857660c
 
 replace github.com/rancher/machine => github.com/ioplane/rancher-machine v0.15.1-0.20261015203543-8661095ef1e0

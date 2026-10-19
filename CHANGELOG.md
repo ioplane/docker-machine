@@ -29,6 +29,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Root and isolated integration modules pin Prism SDK `f9d6c857660c455fbc5747676de09b1794375502`. Request and endpoint failures use sanitized diagnostics with preserved typed causes; private HTTP defaults and provider fallback fixes are included. Driver RPC, persisted JSON, optional queue omission and the Rancher Machine consumer pin remain unchanged.
+
 - Fork pull request titles and descriptions and new commit messages use English; commit titles retain declarative Conventional Commits.
 
 - The pinned Prism SDK bounds decoded/filtered network JSON to 64 MiB and error bodies to 64 KiB. ResponseError status/cause classification replaces server-message matching; unfiltered io.Writer stays streaming. Large inventories require pagination.
