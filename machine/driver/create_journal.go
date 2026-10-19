@@ -260,6 +260,10 @@ func syncJournalDirectory(root *os.Root, path string) error {
 
 // Only the digest is persisted; credentials and raw cloud-init never enter the journal.
 func (d *NutanixDriver) createBinding() (string, error) {
+	if d.VMManagementNetwork != "" && !isUUID(d.VMManagementNetwork) {
+		return "", fmt.Errorf("%w: nutanix-vm-management-network must be a subnet UUID", errDriverConfiguration)
+	}
+
 	publicKey, err := d.bootstrapIdentity()
 	if err != nil {
 		return "", err
@@ -281,6 +285,10 @@ func (d *NutanixDriver) createBinding() (string, error) {
 
 	if d.ConsumerCreateBinding != "" {
 		intent["consumerCreateBinding"] = d.ConsumerCreateBinding
+	}
+
+	if d.VMManagementNetwork != "" {
+		intent["managementNetwork"] = strings.ToLower(d.VMManagementNetwork)
 	}
 
 	data, err := json.Marshal(intent)

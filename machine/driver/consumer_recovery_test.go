@@ -302,3 +302,18 @@ func TestCreateSSHDefaultSurvivesConsumerLifecycle(t *testing.T) {
 		})
 	}
 }
+
+func TestConsumerRecoveryManagementSelectorBoundary(t *testing.T) {
+	t.Parallel()
+
+	node, fixture, request := consumerCheckpoint(t, "consumer")
+	candidate := recoveryCandidate(node)
+	opts := currentConsumerOptions(node)
+	opts.management = fixtureDirectSubnet
+	calls := fixture.calls
+
+	eligible, err := prepareConsumerRecovery(t, candidate, opts, request)
+	if err == nil || eligible || fixture.calls != calls {
+		t.Fatalf("changed selector recovery: eligible=%v calls=%d want=%d err=%v", eligible, fixture.calls, calls, err)
+	}
+}

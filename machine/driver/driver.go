@@ -101,6 +101,7 @@ type NutanixDriver struct {
 	prepared         *preparedCreate
 
 	ConsumerCreateBinding string `json:"consumerCreateBinding,omitempty"`
+	VMManagementNetwork   string `json:",omitempty"` //nolint:tagliatelle // Established persisted JSON spelling.
 }
 
 // NewDriver create new instance.
@@ -216,6 +217,10 @@ func (*NutanixDriver) GetCreateFlags() []mcnflag.Flag {
 		mcnflag.StringSliceFlag{
 			Name:  "nutanix-vm-network",
 			Usage: "The name of the network to attach to the newly created VM",
+		},
+		mcnflag.StringFlag{
+			Name:  "nutanix-vm-management-network",
+			Usage: "Management subnet UUID among the attached networks; empty selects the first incoming NIC",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "NUTANIX_VM_IMAGE",
@@ -440,6 +445,8 @@ func (d *NutanixDriver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 	}
 
 	d.Subnet = opts.StringSlice("nutanix-vm-network")
+
+	d.VMManagementNetwork = opts.String("nutanix-vm-management-network")
 	if len(d.Subnet) == 0 {
 		return errEmptyNetwork
 	}
@@ -898,7 +905,11 @@ func (d *NutanixDriver) waitForIP(ctx context.Context, conn *prismv3.Client, vmU
 			return false, errInvalidVM
 		}
 
-		address, err := managementIP(vmInfo.Status.Resources.NicList, subnetUUID)
+		if d.VMNicQueues != "" && !vmCreationComplete(vmInfo) {
+			return false, nil
+		}
+
+		address, err := d.createdManagementIP(vmInfo.Status.Resources.NicList, subnetUUID)
 		if err != nil || address == "" {
 			return false, err
 		}
@@ -986,6 +997,10 @@ func (d *NutanixDriver) guestCustomization() (*prismv3.GuestCustomization, error
 }
 
 func (d *NutanixDriver) validateHardware() error {
+	if d.VMManagementNetwork != "" && !isUUID(d.VMManagementNetwork) {
+		return fmt.Errorf("%w: nutanix-vm-management-network must be a subnet UUID", errDriverConfiguration)
+	}
+
 	_, err := d.queueCPUCount()
 	if err != nil {
 		return err

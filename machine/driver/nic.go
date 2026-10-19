@@ -118,6 +118,78 @@ func matchesSubnet(subnet *prismv3.SubnetIntentResponse, query, clusterUUID stri
 	return kind == "VLAN" && reference != nil && reference.UUID != nil && *reference.UUID == clusterUUID
 }
 
+func (d *NutanixDriver) managementSubnet(nics []*prismv3.VMNic) (string, error) {
+	selector := d.VMManagementNetwork
+	if selector == "" {
+		// shortcut: omission keeps first-incoming NIC semantics; set an explicit management UUID for multi-NIC profiles.
+		return *nics[0].SubnetReference.UUID, nil
+	}
+
+	if !isUUID(selector) {
+		return "", fmt.Errorf("%w: nutanix-vm-management-network must be a subnet UUID", errDriverConfiguration)
+	}
+
+	matches := 0
+
+	for _, nic := range nics {
+		if nic != nil && nic.SubnetReference != nil && nic.SubnetReference.UUID != nil &&
+			strings.EqualFold(*nic.SubnetReference.UUID, selector) {
+			matches++
+		}
+	}
+
+	if matches != 1 {
+		return "", fmt.Errorf("%w: management subnet must identify exactly one attached NIC", errDriverConfiguration)
+	}
+
+	return strings.ToLower(selector), nil
+}
+
+func (d *NutanixDriver) checkNICQueues(nics []*prismv3.VMNicOutputStatus, management string) error {
+	queues, err := d.nicQueues()
+	if err != nil || queues == nil {
+		return err
+	}
+
+	if len(nics) != len(d.Subnet) {
+		return fmt.Errorf("%w: NIC queues postcondition: NIC count differs from intent", errInvalidVM)
+	}
+
+	seen := make(map[string]bool, len(nics))
+	for _, nic := range nics {
+		if nic == nil || nic.SubnetReference == nil || nic.SubnetReference.UUID == nil ||
+			!isUUID(*nic.SubnetReference.UUID) || nic.NumQueues == nil || *nic.NumQueues != *queues {
+			return fmt.Errorf("%w: NIC queues postcondition: missing identity or configured queue value", errInvalidVM)
+		}
+
+		identity := strings.ToLower(*nic.SubnetReference.UUID)
+		if seen[identity] {
+			return fmt.Errorf("%w: NIC queues postcondition: duplicate subnet identity", errInvalidVM)
+		}
+
+		seen[identity] = true
+	}
+
+	// Names are bound by the journal intent; only UUID inputs can be matched without another inventory request.
+	for _, subnet := range append([]string{management}, d.Subnet...) {
+		identity := strings.TrimSpace(subnet)
+		if isUUID(identity) && !seen[strings.ToLower(identity)] {
+			return fmt.Errorf("%w: NIC queues postcondition: missing configured subnet", errInvalidVM)
+		}
+	}
+
+	return nil
+}
+
+func (d *NutanixDriver) createdManagementIP(nics []*prismv3.VMNicOutputStatus, subnetUUID string) (string, error) {
+	err := d.checkNICQueues(nics, subnetUUID)
+	if err != nil {
+		return "", err
+	}
+
+	return managementIP(nics, subnetUUID)
+}
+
 func managementIP(nics []*prismv3.VMNicOutputStatus, subnetUUID string) (string, error) {
 	if subnetUUID == "" {
 		return "", fmt.Errorf("%w: missing management network identity", errDriverConfiguration)

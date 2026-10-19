@@ -91,6 +91,7 @@ If you want to use Nutanix Node Driver, you need add it in order to start using 
 | `nutanix-vm-cores`           | The number of cores per vCPU                                                                     | no       | 1                                         |
 | `nutanix-vm-nic-queues`      | Positive decimal queues per NIC, at most CPUs × cores; empty leaves `num_queues` unset            | no       | empty                                     |
 | `nutanix-vm-network`         | The network(s) to which the VM is attached to ( name or UUID )                                   | yes      |                                           |
+| `nutanix-vm-management-network` | Management subnet UUID identifying exactly one attached NIC; does not reorder NICs          | no       | first incoming NIC                        |
 | `nutanix-vm-image`           | The name of the Disk Image template we use for the newly created VM (must support cloud-init)    | yes      |                                           |
 | `nutanix-vm-image-size`      | The new size of the Image we use as a template (in GiB)                                          | no       |                                           |
 | `nutanix-vm-categories`      | The name of the categories who will be applied to the newly created VM                           | no       |                                           |
@@ -104,6 +105,22 @@ If you want to use Nutanix Node Driver, you need add it in order to start using 
 | `nutanix-vm-description`     | The description of the newly created VM                                                          | no       | VM created by Nutanix Rancher Node Driver |
 
 
+
+For multi-NIC VMs, set `nutanix-vm-management-network` explicitly. The selector is
+case-insensitive and must match exactly one resolved network before identity
+allocation or VM submission. Omission retains the first incoming NIC, which may
+differ from the original configuration order when a caller sorts repeated flags.
+The selector persists in driver state and binds the Create journal; changing it
+after reservation requires reconciliation and cannot rebind the existing operation.
+
+Explicit `nutanix-vm-nic-queues` requires the existing COMPLETE VM readback to
+contain the configured value on every NIC, with unique subnet identities, the
+expected NIC count and the management subnet. UUID inputs are also matched
+directly; name inputs retain their resolved management identity and count without
+an extra inventory request. Missing or conflicting readback fails Create readiness
+while retaining the allocated VM and journal. Recovery observes that VM without
+resubmitting or deleting it. Omitted queues retain the previous readback behavior.
+This verifies the Prism response; guest channel configuration requires separate validation.
 
 ## Project support
 

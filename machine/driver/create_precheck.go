@@ -45,14 +45,18 @@ func (d *NutanixDriver) PreCreateCheck() (result error) {
 func (d *NutanixDriver) prepareIdentity(ctx context.Context, conn *prismv3.Client, store *journalStore,
 	request *prismv3.VMIntentInput,
 ) error {
-	subnetUUID := *request.Spec.Resources.NicList[0].SubnetReference.UUID
+	subnetUUID, err := d.managementSubnet(request.Spec.Resources.NicList)
+	if err != nil {
+		return err
+	}
+
 	consumerMode := ""
 
 	if d.ConsumerCreateBinding != "" {
 		consumerMode = consumerRecoveryMode
 	}
 
-	err := store.reserve(ctx, conn, subnetUUID, *request.Spec.ClusterReference.UUID, consumerMode)
+	err = store.reserve(ctx, conn, subnetUUID, *request.Spec.ClusterReference.UUID, consumerMode)
 	if err != nil {
 		return err
 	}

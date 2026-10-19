@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,7 @@ type durableFixture struct {
 	deletes     int
 	calls       int
 	present     bool
+	nics        []*prismv3.VMNic
 	server      *httptest.Server
 }
 
@@ -186,12 +188,12 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 			endpoints = nil
 		}
 
+		nics := f.statusNICs(endpoints)
+
 		writeRemovalResponse(t, writer, map[string]any{
 			"metadata": map[string]string{"uuid": durableVMUUID},
 			"spec":     map[string]any{"name": name, "cluster_reference": map[string]string{"uuid": "cluster-id"}},
-			"status": map[string]any{"state": "COMPLETE", "resources": map[string]any{"power_state": "ON", "nic_list": []any{
-				map[string]any{"subnet_reference": map[string]string{"uuid": fixtureDirectSubnet}, "ip_endpoint_list": endpoints},
-			}}},
+			"status":   map[string]any{"state": "COMPLETE", "resources": map[string]any{"power_state": "ON", "nic_list": nics}},
 		})
 	default:
 		responses := map[string][]byte{
@@ -199,8 +201,51 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 			"/api/nutanix/v3/subnets/list":  fixtureJSON(t, "subnets.json"),
 			"/api/nutanix/v3/images/list":   fixtureJSON(t, "images.json"),
 		}
+		if f.mode == "nic-named" {
+			responses["/api/nutanix/v3/subnets/list"] = []byte(strings.NewReplacer(
+				"vlan-id", fixtureDirectSubnet, "overlay-id", managementSubnet,
+			).Replace(string(fixtureJSON(t, "subnets.json"))))
+		}
+
 		servePayloadFixture(t, make(chan createPayload, 1), responses, writer, request)
 	}
+}
+
+func (f *durableFixture) statusNICs(endpoints []map[string]string) []any {
+	if !strings.HasPrefix(f.mode, "nic-") {
+		return []any{map[string]any{
+			"subnet_reference": map[string]string{"uuid": fixtureDirectSubnet}, "ip_endpoint_list": endpoints,
+		}}
+	}
+
+	nics := make([]any, 0, len(f.nics))
+	for index, nic := range slices.Backward(f.nics) {
+		item := map[string]any{
+			"subnet_reference": nic.SubnetReference, "num_queues": nic.NumQueues,
+			"ip_endpoint_list": []map[string]string{{"ip": []string{"10.0.0.11", "10.0.0.12"}[index]}},
+		}
+		if index == 0 {
+			switch f.mode {
+			case "nic-nil-queues":
+				delete(item, "num_queues")
+			case "nic-mismatch":
+				item["num_queues"] = 1
+			case "nic-missing":
+				continue
+			case "nic-duplicate":
+				item["subnet_reference"] = f.nics[1].SubnetReference
+			case "nic-nil":
+				nics = append(nics, nil)
+
+				continue
+			default: // Matched readback echoes the decoded request value.
+			}
+		}
+
+		nics = append(nics, item)
+	}
+
+	return nics
 }
 
 func (f *durableFixture) allocate(t *testing.T, writer http.ResponseWriter, request *http.Request) {
@@ -263,6 +308,8 @@ func (f *durableFixture) create(t *testing.T, writer http.ResponseWriter, reques
 		t.Error("VM POST did not use allocated UUID")
 	}
 
+	f.nics = intent.Spec.Resources.NicList
+
 	f.present = f.mode != "unknown-absent"
 	if f.mode == "lost-create-response" || f.mode == "unknown-absent" || f.mode == "foreign-vm" {
 		loseCreateResponse(t, writer)
@@ -289,5 +336,232 @@ func loseCreateResponse(t *testing.T, writer http.ResponseWriter) {
 	err = connection.Close()
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+const managementSubnet = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+func TestCreateManagementIntent(t *testing.T) {
+	t.Parallel()
+
+	for _, selector := range []string{"", managementSubnet, strings.ToUpper(managementSubnet)} {
+		t.Run("selector="+selector, func(t *testing.T) {
+			t.Parallel()
+			fixture := newDurableFixture(t, "nic-matched")
+			node := payloadDriver(t, fixture.server, "")
+			node.Subnet = []string{fixtureDirectSubnet, managementSubnet}
+
+			data, err := json.Marshal(map[string]string{"VMManagementNetwork": selector})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			decodePayloadJSON(t, data, node)
+
+			err = node.Create()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			wantSubnet, wantIP := managementSubnet, "10.0.0.12"
+			if selector == "" {
+				wantSubnet, wantIP = fixtureDirectSubnet, "10.0.0.11"
+			}
+
+			journal := readIntentJournal(t, node)
+			if journal["subnetUuid"] != wantSubnet || node.IPAddress != wantIP {
+				t.Fatalf("management subnet=%v IP=%s", journal["subnetUuid"], node.IPAddress)
+			}
+
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+
+			if *fixture.nics[0].SubnetReference.UUID != fixtureDirectSubnet ||
+				*fixture.nics[1].SubnetReference.UUID != managementSubnet || fixture.calls != 6 {
+				t.Fatalf("NIC order or API budget changed: calls=%d nics=%v", fixture.calls, fixture.nics)
+			}
+		})
+	}
+}
+
+func readIntentJournal(t *testing.T, node *driver.NutanixDriver) map[string]any {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join(node.StorePath, "machines", node.MachineName, "nutanix-create.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var journal map[string]any
+	decodePayloadJSON(t, data, &journal)
+
+	return journal
+}
+
+func TestCreateManagementIntentRejectedBeforeWrites(t *testing.T) {
+	t.Parallel()
+
+	for _, selector := range []string{"invalid", managementSubnet, fixtureDirectSubnet} {
+		t.Run(selector, func(t *testing.T) {
+			t.Parallel()
+			fixture := newDurableFixture(t, "nic-matched")
+			node := payloadDriver(t, fixture.server, "")
+
+			node.Subnet = []string{fixtureDirectSubnet}
+			if selector == fixtureDirectSubnet {
+				node.Subnet = append(node.Subnet, fixtureDirectSubnet)
+			}
+
+			data, err := json.Marshal(map[string]string{"VMManagementNetwork": selector})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			decodePayloadJSON(t, data, node)
+
+			err = node.Create()
+			if err == nil {
+				t.Error("invalid selector accepted")
+			}
+
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+
+			if fixture.allocations != 0 || fixture.creates != 0 || selector == "invalid" && fixture.calls != 0 {
+				t.Fatalf("invalid intent reached writes: alloc=%d VM=%d calls=%d",
+					fixture.allocations, fixture.creates, fixture.calls)
+			}
+		})
+	}
+}
+
+func TestCreateQueuePostconditionRecovery(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{
+		"nic-matched", "nic-named", "nic-nil-queues", "nic-mismatch", "nic-missing", "nic-duplicate", "nic-nil",
+	} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			fixture := newDurableFixture(t, mode)
+			node := payloadDriver(t, fixture.server, "2")
+			node.Timeout = 1
+
+			node.Subnet = []string{fixtureDirectSubnet, managementSubnet}
+			if mode == "nic-named" {
+				node.Subnet = []string{"vlan", "overlay"}
+			}
+
+			decodePayloadJSON(t, []byte(`{"VMManagementNetwork":"ffffffff-ffff-ffff-ffff-ffffffffffff"}`), node)
+
+			err := node.Create()
+
+			matched := mode == "nic-matched" || mode == "nic-named"
+			if matched {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				assertQueueRecovery(t, fixture, node, err)
+			}
+
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+
+			wantCalls := 6
+			if !matched {
+				wantCalls = 12
+			}
+
+			if mode == "nic-named" {
+				wantCalls++
+			}
+
+			if fixture.allocations != 1 || fixture.creates != 1 || fixture.deletes != 0 || fixture.calls != wantCalls {
+				t.Fatalf("API budget: allocations=%d creates=%d deletes=%d calls=%d want=%d",
+					fixture.allocations, fixture.creates, fixture.deletes, fixture.calls, wantCalls)
+			}
+		})
+	}
+}
+
+func assertQueueRecovery(t *testing.T, fixture *durableFixture, node *driver.NutanixDriver, createErr error) {
+	t.Helper()
+
+	if createErr == nil || !strings.Contains(createErr.Error(), "NIC queues postcondition") {
+		t.Fatalf("missing postcondition error: %v", createErr)
+	}
+
+	if node.VMId != durableVMUUID || readIntentJournal(t, node)["phase"] == "complete" {
+		t.Fatal("identity lost or premature completion")
+	}
+
+	public, err := json.Marshal(node) //nolint:gosec,musttag // Dummy persisted RPC configuration.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restored := new(driver.NutanixDriver)
+	decodePayloadJSON(t, public, restored)
+
+	err = restored.Create()
+	if err == nil {
+		t.Fatal("recovery accepted unchanged bad queues")
+	}
+
+	fixture.mu.Lock()
+	fixture.mode = "nic-matched"
+	fixture.mu.Unlock()
+
+	err = restored.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if restored.VMId != durableVMUUID || restored.IPAddress != "10.0.0.12" {
+		t.Fatal("recovery changed VM or management identity")
+	}
+}
+
+func TestManagementSelectorChangedAfterReserve(t *testing.T) {
+	t.Parallel()
+	fixture := newDurableFixture(t, "nic-matched")
+	node := payloadDriver(t, fixture.server, "")
+	node.Subnet = []string{fixtureDirectSubnet, managementSubnet}
+	decodePayloadJSON(t, []byte(`{"VMManagementNetwork":"ffffffff-ffff-ffff-ffff-ffffffffffff"}`), node)
+
+	err := node.PreCreateCheck()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := readIntentJournal(t, node)
+	decodePayloadJSON(t, []byte(`{"VMManagementNetwork":"11111111-1111-1111-1111-111111111111"}`), node)
+
+	for _, operation := range []func() error{
+		node.Create, node.PreCreateCheck, node.Start, node.Stop, node.Restart, node.Remove,
+	} {
+		err = operation()
+		if err == nil {
+			t.Error("changed management selector accepted")
+		}
+	}
+
+	_, err = node.GetState()
+	if err == nil {
+		t.Error("GetState accepted changed management selector")
+	}
+
+	after := readIntentJournal(t, node)
+	if after["binding"] != before["binding"] || after["subnetUuid"] != before["subnetUuid"] {
+		t.Fatal("journal rebound")
+	}
+
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+
+	const preparationCalls = 3
+	if fixture.allocations != 1 || fixture.creates != 0 || fixture.calls != preparationCalls {
+		t.Fatalf("changed selector reached API: calls=%d", fixture.calls)
 	}
 }

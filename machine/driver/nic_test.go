@@ -1,12 +1,16 @@
 package driver //nolint:testpackage // Identity selection is private; no test-only exported API is introduced.
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"os"
 	"testing"
 
 	prismv3 "github.com/nutanix-cloud-native/prism-go-client/v3"
+	"golang.org/x/crypto/ssh"
 )
 
 type networkProfile struct {
@@ -165,4 +169,93 @@ func TestManagementEndpointRefusal(t *testing.T) {
 	if err != nil || address != "" {
 		t.Fatalf("disconnected NIC address selected: %s, err=%v", address, err)
 	}
+}
+
+func TestManagementOmissionLegacyGolden(t *testing.T) {
+	t.Parallel()
+
+	node := legacyBindingDriver(t)
+
+	binding, err := node.createBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyPath := node.SSHKeyPath
+	node.SSHKeyPath = "/fixture/id"
+
+	state, err := json.Marshal(node) //nolint:gosec,musttag // Legacy RPC state golden has no real credentials.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const wantBinding = "5e1cf538ccd4f3f8a1b7f5e9793cbf84cedc3432f09901c7948d8ca8ad314599"
+
+	const wantState = `{"IPAddress":"","IPv6Address":"","MachineName":"legacy","SSHUser":"root","SSHPort":0,` +
+		`"SSHKeyPath":"/fixture/id","StorePath":"/fixture","SwarmMaster":false,"SwarmHost":"","SwarmDiscovery":"",` +
+		`"Endpoint":"","Username":"","Password":"","Port":"","Insecure":false,"Cluster":"","VMVCPUs":0,"VMCores":0,` +
+		`"VMCPUPassthrough":false,"VMMem":0,"SSHPass":"","Subnet":null,"Image":"","ImageSize":0,"VMId":"",` +
+		`"SessionAuth":false,"ProxyURL":"","Categories":null,"StorageContainer":"","DiskSize":0,"CloudInit":"",` +
+		`"SerialPort":false,"Project":"","BootType":"","Timeout":0,"GPUs":null,"Description":""}`
+	if binding != wantBinding || string(state) != wantState {
+		t.Fatalf("legacy binding/state changed: binding=%s state=%s", binding, state)
+	}
+
+	node.SSHKeyPath = keyPath
+	//nolint:musttag // Saved driver state retains implicit JSON keys.
+	err = json.Unmarshal([]byte(`{"VMManagementNetwork":"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"}`), node)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upper, err := node.createBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	//nolint:musttag // Saved driver state retains implicit JSON keys.
+	err = json.Unmarshal([]byte(`{"VMManagementNetwork":"ffffffff-ffff-ffff-ffff-ffffffffffff"}`), node)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lower, err := node.createBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if upper != lower || lower == binding {
+		t.Fatal("explicit selector not bound canonically")
+	}
+}
+
+func legacyBindingDriver(t *testing.T) *NutanixDriver {
+	t.Helper()
+
+	node := NewDriver("legacy", "/fixture")
+	node.SSHKeyPath = t.TempDir() + "/id"
+	key := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+
+	private, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const keyMode = 0o600
+
+	err = os.WriteFile(node.SSHKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: private}), keyMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	public, err := ssh.NewPublicKey(key.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(node.SSHKeyPath+".pub", ssh.MarshalAuthorizedKey(public), keyMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return node
 }

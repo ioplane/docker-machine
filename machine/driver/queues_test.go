@@ -10,13 +10,16 @@ import (
 )
 
 type queueOptions struct {
-	queues  string
-	sockets int
-	cores   int
+	queues     string
+	management string
+	sockets    int
+	cores      int
 }
 
 func (o queueOptions) String(key string) string {
 	switch key {
+	case "nutanix-vm-management-network":
+		return o.management
 	case "nutanix-vm-nic-queues":
 		return o.queues
 	case "nutanix-boot-type":
@@ -25,6 +28,54 @@ func (o queueOptions) String(key string) string {
 		return "test-only"
 	default:
 		return ""
+	}
+}
+
+func TestManagementNetworkFlagAndValidation(t *testing.T) {
+	t.Parallel()
+
+	found := false
+
+	for _, flag := range driver.NewDriver("test", "").GetCreateFlags() {
+		if flag.String() == "nutanix-vm-management-network" {
+			value, ok := flag.(mcnflag.StringFlag)
+			if !ok || value.Value != "" {
+				t.Fatalf("management flag must be optional string: %#v", flag)
+			}
+
+			found = true
+		}
+	}
+
+	if !found {
+		t.Error("management network flag missing")
+	}
+
+	for _, value := range []string{"", fixtureDirectSubnet, "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "invalid", " "} {
+		node := driver.NewDriver("test", "")
+		err := node.SetConfigFromFlags(queueOptions{management: value, sockets: 2, cores: 2})
+
+		invalid := value == "invalid" || value == " "
+		if (err != nil) != invalid {
+			t.Errorf("selector=%q err=%v", value, err)
+		}
+
+		if invalid {
+			continue
+		}
+
+		data, marshalErr := json.Marshal(node) //nolint:gosec,musttag // Dummy persisted RPC state.
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+
+		var state map[string]any
+		decodePayloadJSON(t, data, &state)
+
+		got, present := state["VMManagementNetwork"]
+		if value == "" && present || value != "" && got != value {
+			t.Errorf("selector state=%v present=%v", got, present)
+		}
 	}
 }
 

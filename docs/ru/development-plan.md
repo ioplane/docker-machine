@@ -392,3 +392,31 @@ residual остаётся в полном quality task, SSH dependency не ме
 lint также сообщает 4 прежних unused exclusion warnings; rules не меняются.
 Rootless Testcontainers runtime локально не запускался; compile-only integration
 check не является его приёмкой.
+
+## Management identity и queues postcondition — 2026-10-19
+
+Участок `um-docs-nrsu.6.10.21` добавляет optional
+`nutanix-vm-management-network` / `VMManagementNetwork` с `omitempty`.
+UUID проверяется при flags/persisted intent и сопоставляется ровно с одним
+resolved NIC до allocator/VM POST. Один resolver применяется при prepare и
+submit; порядок payload NIC сохраняется. Omission сохраняет прежний first-incoming
+NIC и прежние JSON bytes/digest. Явный UUID канонизируется для binding;
+изменение selector после reservation блокируется существующими journal guards
+и consumer recovery без нового protocol или journal fields.
+
+Explicit `VMNicQueues` сверяется в существующем COMPLETE readback: каждый
+actual subnet UUID уникален, число NIC совпадает с intent, management UUID и
+все UUID inputs присутствуют, каждый NumQueues совпадает с общим scalar.
+Name inputs не сопоставляются с UUID по догадке: сохраняются management identity,
+expected count и одинаковое значение queues на всех actual NIC без нового
+inventory request. Missing/mismatch не завершает Create и сохраняет VMUUID;
+повторный Create наблюдает ту же VM без второго POST, Delete или PUT.
+Omitted queues сохраняет прежний путь и API budget.
+
+Критические проверки расширяют существующие fixtures: сортированный вход с
+primary UUID после P2P, invalid/foreign/duplicate selector до writes, legacy
+JSON/digest golden, changed selector guards и response-order-independent queues
+с восстановлением одного VMUUID. Полный exact-final gate и rootless Blacksmith
+выполняются после SPEC → fresh QUALITY отдельно. Provider/module wiring,
+фактический BOM, регистрация/release и PC/AHV/guest acceptance остаются отдельными
+границами; новых live observations этот source unit не добавляет.

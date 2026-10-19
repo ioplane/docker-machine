@@ -27,11 +27,16 @@ func (d *NutanixDriver) submitCreate(ctx context.Context, store *journalStore) e
 	// The right to submit is consumed in memory and is never restored from a consumer checkpoint.
 	d.prepared = nil
 	request, conn := prepared.request, prepared.conn
-	subnetUUID := *request.Spec.Resources.NicList[0].SubnetReference.UUID
+
+	subnetUUID, err := d.managementSubnet(request.Spec.Resources.NicList)
+	if err != nil {
+		return err
+	}
+
 	d.VMId = store.journal.VMUUID
 	store.journal.Phase = phaseSubmitted
 
-	err := store.save()
+	err = store.save()
 	if err != nil {
 		return err
 	}
@@ -287,7 +292,7 @@ func (d *NutanixDriver) recoverCreate(ctx context.Context, store *journalStore) 
 			return false, nil
 		}
 
-		address, addressErr := managementIP(response.Status.Resources.NicList, journal.SubnetUUID)
+		address, addressErr := d.createdManagementIP(response.Status.Resources.NicList, journal.SubnetUUID)
 		if addressErr != nil || address == "" {
 			return false, addressErr
 		}

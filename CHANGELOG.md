@@ -7,6 +7,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Optional `nutanix-vm-management-network` selects a management subnet UUID independently of incoming NIC order. The selector persists and joins the Create binding only when explicit; omitted state and bindings remain compatible.
+
 - Optional consumer Create recovery validates pending owned-UUID journals before current flags or install scripts. SSH custom-script bytes, effective hostname and mode join the intent digest; legacy, complete and removed journals remain ineligible. Persisted digests support later lifecycle operations without the script mount; recovery never reconstructs VM POST permission.
 - The actual CLI/plugin/SecretStore crash test validates the post-Create Secret PUT after restoring the pre-Create archive at the same absolute path, without guest SSH or a duplicate VM POST.
 
@@ -46,6 +48,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - API response diagnostics no longer echo server payloads, messages, details or arbitrary HTTP status text, while preserving cancellation and JSON causes through errors.Is/As.
 
 ### Fixed
+
+- Explicit NIC queues require matching per-NIC COMPLETE readback before Create readiness. Missing, duplicate or mismatched NIC data retains the allocated identity and fails without another VM submission or cleanup mutation.
 
 - Repeated Start/Stop skips the power PUT only for a completed VM whose response UUID matches the requested VM and whose desired and observed power both match the target. Missing or conflicting response UUIDs fail before mutation; transitions retain task and observed-power checks.
 - GPU lists reuse one host inventory request while preserving exact name, target-cluster and UNUSED selection, including repeated-name behavior. Matching GPUs without a device ID return an error instead of panicking. Empty lists and an empty first name make no inventory request.
