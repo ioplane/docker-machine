@@ -651,8 +651,18 @@ func (d *NutanixDriver) setPowerStateContext(ctx context.Context, power string) 
 		return fmt.Errorf(driverOperationFormat, err)
 	}
 
-	if vmResp == nil || vmResp.Spec == nil || vmResp.Spec.Resources == nil || vmResp.Metadata == nil {
-		return errInvalidVM
+	complete, err := vmPowerStateComplete(vmResp, d.VMId, power)
+	if err != nil {
+		return err
+	}
+
+	if complete {
+		err = ctx.Err()
+		if err != nil {
+			return fmt.Errorf(driverOperationFormat, err)
+		}
+
+		return nil
 	}
 
 	request := &prismv3.VMIntentInput{Spec: vmResp.Spec, Metadata: vmResp.Metadata}
@@ -686,6 +696,18 @@ func (d *NutanixDriver) setPowerStateContext(ctx context.Context, power string) 
 
 		return *vmInfo.Status.Resources.PowerState == power, nil
 	})
+}
+
+func vmPowerStateComplete(response *prismv3.VMIntentResponse, vmUUID, power string) (bool, error) {
+	if response == nil || response.Spec == nil || response.Spec.Resources == nil || response.Metadata == nil ||
+		response.Metadata.UUID == nil || *response.Metadata.UUID == "" ||
+		!strings.EqualFold(*response.Metadata.UUID, vmUUID) {
+		return false, errInvalidVM
+	}
+
+	return vmCreationComplete(response) && response.Spec.Resources.PowerState != nil &&
+		*response.Spec.Resources.PowerState == power && response.Status.Resources != nil &&
+		response.Status.Resources.PowerState != nil && *response.Status.Resources.PowerState == power, nil
 }
 
 func vmTaskUUID(response any) (string, error) {

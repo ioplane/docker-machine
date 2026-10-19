@@ -47,6 +47,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Repeated Start/Stop skips the power PUT only for a completed VM whose response UUID matches the requested VM and whose desired and observed power both match the target. Missing or conflicting response UUIDs fail before mutation; transitions retain task and observed-power checks.
 - GPU lists reuse one host inventory request while preserving exact name, target-cluster and UNUSED selection, including repeated-name behavior. Matching GPUs without a device ID return an error instead of panicking. Empty lists and an empty first name make no inventory request.
 - UUID shape checks reuse the unchanged anchored case-insensitive hexadecimal pattern instead of recompiling it on every call.
 - Root and integration modules pin the reviewed SDK pagination and task-wait fixes at `d4df6f8a97b0848dd32f6b6841e71ddeb9687fb2`; valid list fixtures include explicit zero offsets.

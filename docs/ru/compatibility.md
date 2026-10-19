@@ -164,6 +164,16 @@ Go API/wire совместимость не является утвержден�
 
 ## Deadline и NIC identity
 
+Повторные Start/Stop не отправляют PUT, только если UUID GET-ответа совпадает с
+VMId без учёта регистра, `status.state` равен `COMPLETE`, а desired
+`spec.resources.power_state` и observed `status.resources.power_state` оба
+совпадают с целью. Отсутствующий, пустой или чужой UUID блокирует операцию до
+mutation. Неполное, переходное или противоречивое состояние сохраняет прежний
+PUT/task/postcondition путь. No-op сохраняет отмену context и локальную
+сериализацию с journal/ownership checks; Restart сохраняет порядок OFF → ON.
+Это offline-контракт драйвера; атомарность snapshot при внешней конкурентной
+записи и поведение live Prism этой проверкой не подтверждаются.
+
 Один положительный operation timeout покрывает HTTP/body/task/IP/power;
 Restart разделяет этот бюджет между OFF/ON. CLI минимум300s сохранён; invalid
 restored timeout отклоняется. Failed/aborted task и malformed response не дают
