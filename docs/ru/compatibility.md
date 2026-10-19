@@ -154,9 +154,8 @@ alias/merge в изменяемых узлах и неверная форма ro
 
 ## Upload dependency: исторический этап v6
 
-На этапе v6 был закреплён SDK `70ca9c60ff066dfa3ee00977d0f4c27998874245`,
-`v0.8.3-0.20261015125745-70ca9c60ff06`. Историческая приёмка сохраняла HTTP budgets/errors из v4;
-дополнительно исправлено владение file upload body и независимость replay.
+Этап v6 описывает исправление владения file upload body и независимости replay
+с сохранением HTTP budgets/errors из v4. Текущее закрепление SDK приведено выше.
 Public entry points, driver RPC/JSON и VM NIC queues сохраняются. Low-level
 upload callers должны держать regular file открытым и неизменным до завершения
 запроса/повторов; EOF даёт пустой body, pipe/device/directory отклоняются.
