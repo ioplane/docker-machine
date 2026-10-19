@@ -35,6 +35,7 @@ import (
 
 const (
 	consumerCompletePUT      = 3
+	consumerNICQueues        = "2"
 	rotatedFixtureCredential = "rotated"
 	consumerMode             = "ssh-custom-script/v1"
 	checkpointNamespace      = "test"
@@ -91,7 +92,7 @@ func (s *checkpointAPI) validate(snapshot *consumerCheckpoint) error {
 		return fmt.Errorf("%w: phase/UUID/proof", errConsumerCheckpoint)
 	}
 
-	if snapshot.driver.ManagementNetwork != fixtureOverlayUUID || snapshot.driver.Queues != "2" {
+	if snapshot.driver.ManagementNetwork != fixtureOverlayUUID || snapshot.driver.Queues != consumerNICQueues {
 		return fmt.Errorf("%w: persisted management selector or queues", errConsumerCheckpoint)
 	}
 
@@ -395,7 +396,7 @@ func startConsumerCLI(t *testing.T, endpoint, store, kubeconfig, script, credent
 		"--nutanix-username", credentials, "--nutanix-password", credentials,
 		"--nutanix-insecure", "--nutanix-cluster", "test-only", "--nutanix-vm-image", "test-only",
 		"--nutanix-vm-network", "overlay", "--nutanix-vm-cpus", "2",
-		"--nutanix-vm-management-network", fixtureOverlayUUID, "--nutanix-vm-nic-queues", "2",
+		"--nutanix-vm-management-network", fixtureOverlayUUID, "--nutanix-vm-nic-queues", consumerNICQueues,
 		"--nutanix-vm-cores", "2", "--nutanix-vm-mem", "2048", checkpointMachineName)
 
 	cmd.Env = append(os.Environ(), "PATH="+build+":"+os.Getenv("PATH"))
@@ -504,7 +505,7 @@ func TestSecretStoreCheckpointWire(t *testing.T) {
 
 	node := driver.NewDriver(checkpointMachineName, paths.store)
 	node.ConsumerCreateBinding = "fixture-proof"
-	node.VMManagementNetwork, node.VMNicQueues = fixtureOverlayUUID, "2"
+	node.VMManagementNetwork, node.VMNicQueues = fixtureOverlayUUID, consumerNICQueues
 	err = store.Save(&machinehost.Host{Name: checkpointMachineName, DriverName: "nutanix", Driver: node})
 
 	api.mu.Lock()
