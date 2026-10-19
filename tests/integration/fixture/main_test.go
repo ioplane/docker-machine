@@ -39,52 +39,58 @@ func TestRequestDerivedNICReadback(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 
-			fixtureState := &fixture{Scenario: scenario}
-			if scenario == omittedScenario {
-				fixtureState.Scenario = "recovery"
-			}
-
-			identities := []string{
-				fixtureOverlayUUID, "11111111-1111-1111-1111-111111111111", fixtureVLANUUID,
-			}
-			if scenario == omittedScenario {
-				identities = identities[:1]
-			}
-
-			nics := make([]map[string]any, 0, len(identities))
-			for _, id := range identities {
-				nic := map[string]any{"subnet_reference": map[string]string{"uuid": id}}
-				if scenario != omittedScenario {
-					nic["num_queues"] = 2
-				}
-
-				nics = append(nics, nic)
-			}
-
-			payload, err := json.Marshal(map[string]any{"spec": map[string]any{"resources": map[string]any{"nic_list": nics}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			fixtureCall(t, fixtureState, http.MethodPost, "/api/nutanix/v3/idempotence_identifiers",
-				[]byte(`{"client_identifier":"fixture-client"}`))
-			fixtureCall(t, fixtureState, http.MethodPost, "/api/nutanix/v3/vms", payload)
-
-			for read := range 2 {
-				if scenario == "crash" && read == 1 {
-					fixtureCall(t, fixtureState, http.MethodPost, "/resume", []byte(`{}`))
-				}
-
-				response := fixtureCall(t, fixtureState, http.MethodGet, "/api/nutanix/v3/vms/"+fixtureVMUUID, nil)
-				assertReadbackNICs(t, response, identities, scenario, read)
-			}
-
-			if fixtureState.Creates != 1 || fixtureState.Allocations != 1 ||
-				fixtureState.Deletes != 0 || fixtureState.VMReads != 2 {
-				t.Fatalf("mutations/read budget: creates=%d allocations=%d deletes=%d reads=%d",
-					fixtureState.Creates, fixtureState.Allocations, fixtureState.Deletes, fixtureState.VMReads)
-			}
+			runRequestDerivedNICReadback(t, scenario)
 		})
+	}
+}
+
+func runRequestDerivedNICReadback(t *testing.T, scenario string) {
+	t.Helper()
+
+	fixtureState := &fixture{Scenario: scenario}
+	if scenario == omittedScenario {
+		fixtureState.Scenario = "recovery"
+	}
+
+	identities := []string{
+		fixtureOverlayUUID, "11111111-1111-1111-1111-111111111111", fixtureVLANUUID,
+	}
+	if scenario == omittedScenario {
+		identities = identities[:1]
+	}
+
+	nics := make([]map[string]any, 0, len(identities))
+	for _, id := range identities {
+		nic := map[string]any{"subnet_reference": map[string]string{"uuid": id}}
+		if scenario != omittedScenario {
+			nic["num_queues"] = 2
+		}
+
+		nics = append(nics, nic)
+	}
+
+	payload, err := json.Marshal(map[string]any{"spec": map[string]any{"resources": map[string]any{"nic_list": nics}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixtureCall(t, fixtureState, http.MethodPost, "/api/nutanix/v3/idempotence_identifiers",
+		[]byte(`{"client_identifier":"fixture-client"}`))
+	fixtureCall(t, fixtureState, http.MethodPost, "/api/nutanix/v3/vms", payload)
+
+	for read := range 2 {
+		if scenario == "crash" && read == 1 {
+			fixtureCall(t, fixtureState, http.MethodPost, "/resume", []byte(`{}`))
+		}
+
+		response := fixtureCall(t, fixtureState, http.MethodGet, "/api/nutanix/v3/vms/"+fixtureVMUUID, nil)
+		assertReadbackNICs(t, response, identities, scenario, read)
+	}
+
+	if fixtureState.Creates != 1 || fixtureState.Allocations != 1 ||
+		fixtureState.Deletes != 0 || fixtureState.VMReads != 2 {
+		t.Fatalf("mutations/read budget: creates=%d allocations=%d deletes=%d reads=%d",
+			fixtureState.Creates, fixtureState.Allocations, fixtureState.Deletes, fixtureState.VMReads)
 	}
 }
 

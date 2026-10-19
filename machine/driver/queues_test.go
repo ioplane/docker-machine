@@ -34,22 +34,7 @@ func (o queueOptions) String(key string) string {
 func TestManagementNetworkFlagAndValidation(t *testing.T) {
 	t.Parallel()
 
-	found := false
-
-	for _, flag := range driver.NewDriver("test", "").GetCreateFlags() {
-		if flag.String() == "nutanix-vm-management-network" {
-			value, ok := flag.(mcnflag.StringFlag)
-			if !ok || value.Value != "" {
-				t.Fatalf("management flag must be optional string: %#v", flag)
-			}
-
-			found = true
-		}
-	}
-
-	if !found {
-		t.Error("management network flag missing")
-	}
+	assertManagementNetworkFlag(t)
 
 	for _, value := range []string{"", fixtureDirectSubnet, "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "invalid", " "} {
 		node := driver.NewDriver("test", "")
@@ -76,6 +61,27 @@ func TestManagementNetworkFlagAndValidation(t *testing.T) {
 		if value == "" && present || value != "" && got != value {
 			t.Errorf("selector state=%v present=%v", got, present)
 		}
+	}
+}
+
+func assertManagementNetworkFlag(t *testing.T) {
+	t.Helper()
+
+	found := false
+
+	for _, flag := range driver.NewDriver("test", "").GetCreateFlags() {
+		if flag.String() == "nutanix-vm-management-network" {
+			value, ok := flag.(mcnflag.StringFlag)
+			if !ok || value.Value != "" {
+				t.Fatalf("management flag must be optional string: %#v", flag)
+			}
+
+			found = true
+		}
+	}
+
+	if !found {
+		t.Error("management network flag missing")
 	}
 }
 

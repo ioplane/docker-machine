@@ -477,11 +477,17 @@ func TestCreateQueuePostconditionRecovery(t *testing.T) {
 				wantCalls++
 			}
 
-			if fixture.allocations != 1 || fixture.creates != 1 || fixture.deletes != 0 || fixture.calls != wantCalls {
-				t.Fatalf("API budget: allocations=%d creates=%d deletes=%d calls=%d want=%d",
-					fixture.allocations, fixture.creates, fixture.deletes, fixture.calls, wantCalls)
-			}
+			assertQueueAPIBudget(t, fixture, wantCalls)
 		})
+	}
+}
+
+func assertQueueAPIBudget(t *testing.T, fixture *durableFixture, wantCalls int) {
+	t.Helper()
+
+	if fixture.allocations != 1 || fixture.creates != 1 || fixture.deletes != 0 || fixture.calls != wantCalls {
+		t.Fatalf("API budget: allocations=%d creates=%d deletes=%d calls=%d want=%d",
+			fixture.allocations, fixture.creates, fixture.deletes, fixture.calls, wantCalls)
 	}
 }
 
