@@ -7,7 +7,7 @@
 Root и isolated integration module используют
 `github.com/ioplane/prism-go-client v0.8.3-0.20261019074702-f9d6c857660c`,
 commit `f9d6c857660c455fbc5747676de09b1794375502`.
-Это текущее закрепление; более ранние SHA ниже относятся к соответствующим этапам.
+Более ранние SDK SHA ниже относятся только к явно обозначенным историческим этапам.
 Module path и imports сохраняют `github.com/nutanix-cloud-native/prism-go-client`.
 Источник закрепления — `go list -m -json` по полному SHA в declared Podman image;
 origin указывает на [этот commit](https://github.com/ioplane/prism-go-client/commit/f9d6c857660c455fbc5747676de09b1794375502).
@@ -41,8 +41,8 @@ CHANGELOG; runtime inputs не изменены.
 `github.com/ioplane/rancher-machine v0.15.1-0.20261015203543-8661095ef1e0`,
 commit `8661095ef1e05265e5c7b7bc212fc473c6e59a7c`,
 [PR #1](https://github.com/ioplane/rancher-machine/pull/1).
-Root и isolated integration module используют один replacement; SDK pin
-`70ca9c60ff066dfa3ee00977d0f4c27998874245` сохранён. Consumer сохраняет module
+Root и isolated integration module используют один replacement; текущий SDK pin —
+`f9d6c857660c455fbc5747676de09b1794375502`. Consumer сохраняет module
 floor Go 1.26.0 при toolchain Go 1.27.2; driver floor остаётся Go 1.27.0.
 Это fork commit поверх выбранной базы, а не upstream release `v0.15.1`.
 
@@ -72,8 +72,8 @@ RPC и JSON, а не Go shared-object ABI. `RegisterDriver` после норм�
 ## Prism SDK и JSON API
 
 База Prism SDK — стабильная версия `v0.8.2`. В `go.mod` закреплён fork
-`github.com/ioplane/prism-go-client v0.8.3-0.20261015125745-70ca9c60ff06`,
-commit `70ca9c60ff066dfa3ee00977d0f4c27998874245`,
+`github.com/ioplane/prism-go-client v0.8.3-0.20261019074702-f9d6c857660c`,
+commit `f9d6c857660c455fbc5747676de09b1794375502`,
 [PR #1](https://github.com/ioplane/prism-go-client/pull/1).
 Это исправление поверх `v0.8.2`, а не опубликованный upstream release `v0.8.3`.
 Причина: upstream SDK изменяет общий `http.DefaultTransport` при создании клиента.
@@ -89,7 +89,7 @@ message/details и произвольный HTTP status text исключены 
 пагинацию; прежние message-string assertions заменяются на errors.As/Is.
 Это breaking diagnostics/size policy SDK, не ограничение Nutanix API.
 
-Public API сравнен по 15 packages W0: 14 без изменений; root аддитивно содержит
+Исторический W0 сравнивал Public API по 15 packages: 14 без изменений; root аддитивно содержит
 новый error type/sentinel и методы. Credentials, VM DTO, nil/omitted fields
 и v4/converged categories не изменены. W0 text hash исторический, binary Go ABI
 из этого сравнения не следует.
@@ -152,10 +152,10 @@ alias/merge в изменяемых узлах и неверная форма ro
 теперь возвращается ошибка до запроса. SDK pin и queue payload не меняются.
 
 
-## Upload dependency: этап v6
+## Upload dependency: исторический этап v6
 
-Текущий immutable pin — SDK `70ca9c60ff066dfa3ee00977d0f4c27998874245`,
-`v0.8.3-0.20261015125745-70ca9c60ff06`. HTTP budgets/errors из v4 сохраняются;
+На этапе v6 был закреплён SDK `70ca9c60ff066dfa3ee00977d0f4c27998874245`,
+`v0.8.3-0.20261015125745-70ca9c60ff06`. Историческая приёмка сохраняла HTTP budgets/errors из v4;
 дополнительно исправлено владение file upload body и независимость replay.
 Public entry points, driver RPC/JSON и VM NIC queues сохраняются. Low-level
 upload callers должны держать regular file открытым и неизменным до завершения
@@ -243,7 +243,7 @@ Allocator вызывается с count=1 и valid_duration_in_minutes=1440.
 значение отклоняется. Driver намеренно требует future expiration_time перед
 VM POST, хотя Swagger помечает поле опциональным: отсутствие безопасного
 срока действия даёт fail-closed без VM mutation. Источник —
-[закреплённый v3 Swagger](https://github.com/ioplane/prism-go-client/blob/70ca9c60ff066dfa3ee00977d0f4c27998874245/v3/swagger.json#L17731).
+[закреплённый v3 Swagger](https://github.com/ioplane/prism-go-client/blob/f9d6c857660c455fbc5747676de09b1794375502/v3/swagger.json#L17731).
 
 Remove восстанавливает UUID из журнала и проверяет exact VM metadata; GET404
 даёт success без DELETE при подтверждённом terminal create outcome. После
