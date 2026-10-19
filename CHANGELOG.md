@@ -49,6 +49,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Prism integration fixture derives COMPLETE NIC identities and optional queues from the captured VM request. Legal subnet UUID fixtures preserve delayed/missing management IP scenarios, while the existing CLI SecretStore checkpoint checks persisted management selection and queues.
+
 - Explicit NIC queues require matching per-NIC COMPLETE readback before Create readiness. Missing, duplicate or mismatched NIC data retains the allocated identity and fails without another VM submission or cleanup mutation.
 
 - Repeated Start/Stop skips the power PUT only for a completed VM whose response UUID matches the requested VM and whose desired and observed power both match the target. Missing or conflicting response UUIDs fail before mutation; transitions retain task and observed-power checks.

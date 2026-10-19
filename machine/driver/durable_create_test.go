@@ -203,7 +203,7 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 		}
 		if f.mode == "nic-named" {
 			responses["/api/nutanix/v3/subnets/list"] = []byte(strings.NewReplacer(
-				"vlan-id", fixtureDirectSubnet, "overlay-id", managementSubnet,
+				fixtureVLANSubnet, fixtureDirectSubnet, fixtureOverlaySubnet, managementSubnet,
 			).Replace(string(fixtureJSON(t, "subnets.json"))))
 		}
 

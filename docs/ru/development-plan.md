@@ -420,3 +420,14 @@ JSON/digest golden, changed selector guards и response-order-independent queues
 выполняются после SPEC → fresh QUALITY отдельно. Provider/module wiring,
 фактический BOM, регистрация/release и PC/AHV/guest acceptance остаются отдельными
 границами; новых live observations этот source unit не добавляет.
+
+### Integration fixture follow-up — 2026-10-19
+
+COMPLETE fixture формирует reversed NIC readback из фактически принятого VM
+request, включая optional NumQueues без подстановки default. Общие VLAN/overlay
+fixtures используют UUID shape; прямые payload expectations согласованы.
+Прежние delayed/nil management IP, crash/recovery и одна VM submission сохраняются.
+Существующий actual CLI SecretStore checkpoint передаёт management selector и
+queues=2, проверяет их persistence на всех прежних Secret PUT. Локальный
+fixture-only self-check и serialization caller не заменяют rootless TC; новый
+exact-final source gate и remote acceptance выполняются после отдельного review.

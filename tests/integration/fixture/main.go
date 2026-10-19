@@ -4,11 +4,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +36,8 @@ const (
 	recoveryScenario     = "recovery"
 	scenarioBodyLimit    = 1024
 	payloadBodyLimit     = 1 << 20
+	fixtureVLANUUID      = "22222222-2222-2222-2222-222222222222"
+	fixtureOverlayUUID   = "33333333-3333-3333-3333-333333333333"
 )
 
 type scenarioInput struct {
@@ -225,16 +229,17 @@ func (f *fixture) serveNetworkScenario(writer http.ResponseWriter, request *http
 		}
 
 		index := 0
-		identity := "vlan-id"
+		identity := fixtureVLANUUID
 
 		if f.Scenario == "duplicate-overlay" {
 			index = 1
-			identity = "overlay-id"
+			identity = fixtureOverlayUUID
 			inventory.Entities[index] = json.RawMessage(strings.ReplaceAll(string(inventory.Entities[index]),
 				`"subnet_type":"OVERLAY"`, `"subnet_type":"OVERLAY","vpc_reference":{"uuid":"first-vpc"}`))
 		}
 
-		duplicate := strings.ReplaceAll(string(inventory.Entities[index]), identity, "duplicate-"+identity)
+		duplicate := strings.ReplaceAll(string(inventory.Entities[index]), identity,
+			"44444444-4444-4444-4444-444444444444")
 		duplicate = strings.ReplaceAll(duplicate, "first-vpc", "second-vpc")
 		inventory.Entities = append(inventory.Entities, json.RawMessage(duplicate))
 		inventory.Metadata["length"] = int64(len(inventory.Entities))
@@ -268,16 +273,67 @@ func (f *fixture) serveLifecycleScenario(writer http.ResponseWriter, request *ht
 			endpoints = `[null,{}, {"ip":"fd00::2"},{"ip":"10.0.0.20"},{"ip":"::ffff:10.0.0.10"}]`
 		}
 
-		writeResponse(writer, []byte(`{"metadata":{"uuid":"`+fixtureVMUUID+`"},
-			"spec":{"name":"test","cluster_reference":{"uuid":"cluster-id"}},
-			"status":{"state":"COMPLETE","resources":{"nic_list":[
-			{"subnet_reference":{"uuid":"vlan-id"},"ip_endpoint_list":[{"ip":"10.99.0.1"}]},null,
-			{"subnet_reference":{"uuid":"overlay-id"},"ip_endpoint_list":`+endpoints+`}]}}}`))
+		nics, err := f.readbackNICs(json.RawMessage(endpoints))
+		if err != nil {
+			http.Error(writer, "invalid fixture VM payload", http.StatusInternalServerError)
+
+			return true
+		}
+
+		err = json.NewEncoder(writer).Encode(map[string]any{
+			"metadata": map[string]string{"uuid": fixtureVMUUID},
+			"spec":     map[string]any{"name": "test", "cluster_reference": map[string]string{"uuid": "cluster-id"}},
+			"status":   map[string]any{"state": "COMPLETE", "resources": map[string]any{"nic_list": nics}},
+		})
+		if err != nil {
+			log.Print(err)
+		}
 	default:
 		return false
 	}
 
 	return true
+}
+
+func (f *fixture) readbackNICs(endpoints json.RawMessage) ([]map[string]json.RawMessage, error) {
+	var intent struct {
+		Spec map[string]json.RawMessage `json:"spec"`
+	}
+
+	err := json.Unmarshal(f.Payload, &intent)
+	if err != nil {
+		return nil, fmt.Errorf("decode captured fixture intent: %w", err)
+	}
+
+	var resources struct {
+		NICs []map[string]json.RawMessage `json:"nic_list"` //nolint:tagliatelle // Prism v3 schema spelling.
+	}
+
+	err = json.Unmarshal(intent.Spec["resources"], &resources)
+	if err != nil {
+		return nil, fmt.Errorf("decode captured fixture resources: %w", err)
+	}
+
+	nics := resources.NICs
+	slices.Reverse(nics)
+
+	for _, nic := range nics {
+		var reference struct {
+			UUID string `json:"uuid"`
+		}
+
+		err = json.Unmarshal(nic["subnet_reference"], &reference)
+		if err != nil {
+			return nil, fmt.Errorf("decode captured fixture subnet: %w", err)
+		}
+
+		nic["ip_endpoint_list"] = json.RawMessage("null")
+		if reference.UUID == fixtureOverlayUUID {
+			nic["ip_endpoint_list"] = endpoints
+		}
+	}
+
+	return nics, nil
 }
 
 func serveLookup(writer http.ResponseWriter, request *http.Request) {

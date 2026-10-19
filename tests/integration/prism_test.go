@@ -30,6 +30,8 @@ const (
 	fixtureDirectoryMode  = 0o700
 	fixtureNICCount       = 3
 	missingSubnetScenario = "missing-subnet"
+	fixtureVLANUUID       = "22222222-2222-2222-2222-222222222222"
+	fixtureOverlayUUID    = "33333333-3333-3333-3333-333333333333"
 )
 
 type capturedReference struct {
@@ -168,7 +170,7 @@ func assertCapturedCreate(t *testing.T, captured capturedCreate, scenario string
 		t.Fatalf("NIC count=%d, want 3", len(captured.Payload.Spec.Resources.NICs))
 	}
 
-	subnets := []string{"overlay-id", "11111111-1111-1111-1111-111111111111", "vlan-id"}
+	subnets := []string{fixtureOverlayUUID, "11111111-1111-1111-1111-111111111111", fixtureVLANUUID}
 
 	for index, nic := range captured.Payload.Spec.Resources.NICs {
 		if nic.SubnetReference.UUID != subnets[index] {

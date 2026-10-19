@@ -45,11 +45,13 @@ const (
 var errConsumerCheckpoint = errors.New("invalid consumer checkpoint")
 
 type consumerDriverState struct {
-	VMID     string `json:"vmId"`
-	IP       string `json:"ipAddress"`
-	User     string `json:"username"`
-	Password string `json:"password"`
-	Binding  string `json:"consumerCreateBinding"`
+	VMID              string `json:"vmId"`
+	IP                string `json:"ipAddress"`
+	User              string `json:"username"`
+	Password          string `json:"password"`
+	Binding           string `json:"consumerCreateBinding"`
+	ManagementNetwork string `json:"vmManagementNetwork"`
+	Queues            string `json:"vmNicQueues"`
 }
 
 type consumerCheckpoint struct {
@@ -87,6 +89,10 @@ func (s *checkpointAPI) validate(snapshot *consumerCheckpoint) error {
 
 	if snapshot.phase != phase || snapshot.uuid != expectedRecoveryUUID || snapshot.driver.Binding == "" {
 		return fmt.Errorf("%w: phase/UUID/proof", errConsumerCheckpoint)
+	}
+
+	if snapshot.driver.ManagementNetwork != fixtureOverlayUUID || snapshot.driver.Queues != "2" {
+		return fmt.Errorf("%w: persisted management selector or queues", errConsumerCheckpoint)
 	}
 
 	if s.puts > 1 && (snapshot.key != s.first.key || snapshot.driver.Binding != s.first.driver.Binding ||
@@ -389,6 +395,7 @@ func startConsumerCLI(t *testing.T, endpoint, store, kubeconfig, script, credent
 		"--nutanix-username", credentials, "--nutanix-password", credentials,
 		"--nutanix-insecure", "--nutanix-cluster", "test-only", "--nutanix-vm-image", "test-only",
 		"--nutanix-vm-network", "overlay", "--nutanix-vm-cpus", "2",
+		"--nutanix-vm-management-network", fixtureOverlayUUID, "--nutanix-vm-nic-queues", "2",
 		"--nutanix-vm-cores", "2", "--nutanix-vm-mem", "2048", checkpointMachineName)
 
 	cmd.Env = append(os.Environ(), "PATH="+build+":"+os.Getenv("PATH"))
@@ -497,6 +504,7 @@ func TestSecretStoreCheckpointWire(t *testing.T) {
 
 	node := driver.NewDriver(checkpointMachineName, paths.store)
 	node.ConsumerCreateBinding = "fixture-proof"
+	node.VMManagementNetwork, node.VMNicQueues = fixtureOverlayUUID, "2"
 	err = store.Save(&machinehost.Host{Name: checkpointMachineName, DriverName: "nutanix", Driver: node})
 
 	api.mu.Lock()

@@ -21,12 +21,14 @@ import (
 )
 
 const (
-	fixturePublicKey    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtqJ7zOtqQtYqOo0CpvDXNlMhV3HeJDpjrASKGLWdop"
-	fixtureDirectSubnet = "11111111-1111-1111-1111-111111111111"
-	fixtureKeyMode      = 0o600
-	fixtureMemoryMiB    = 2048
-	fixtureQueues       = "2"
-	fixtureDescription  = "offline payload fixture"
+	fixturePublicKey     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtqJ7zOtqQtYqOo0CpvDXNlMhV3HeJDpjrASKGLWdop"
+	fixtureDirectSubnet  = "11111111-1111-1111-1111-111111111111"
+	fixtureVLANSubnet    = "22222222-2222-2222-2222-222222222222"
+	fixtureOverlaySubnet = "33333333-3333-3333-3333-333333333333"
+	fixtureKeyMode       = 0o600
+	fixtureMemoryMiB     = 2048
+	fixtureQueues        = "2"
+	fixtureDescription   = "offline payload fixture"
 )
 
 type createPayload map[string]json.RawMessage
@@ -72,7 +74,7 @@ func TestCreateQueuePayload(t *testing.T) {
 			}
 
 			payload := capturedPayload(t, fixture)
-			assertQueuePayload(t, payload, value, []string{fixtureDirectSubnet, "vlan-id", "overlay-id"})
+			assertQueuePayload(t, payload, value, []string{fixtureDirectSubnet, fixtureVLANSubnet, fixtureOverlaySubnet})
 			assertCloudMetadata(t, payload)
 			assertCorePayload(t, payload)
 			assertDefaultCloudInit(t, payloadResources(t, payload))
@@ -533,5 +535,5 @@ func TestCreateNICInputOrder(t *testing.T) {
 	}
 
 	assertQueuePayload(t, capturedPayload(t, fixture), fixtureQueues,
-		[]string{"overlay-id", fixtureDirectSubnet, "vlan-id"})
+		[]string{fixtureOverlaySubnet, fixtureDirectSubnet, fixtureVLANSubnet})
 }
