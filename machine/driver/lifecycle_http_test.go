@@ -75,17 +75,18 @@ func TestPowerStateNoop(t *testing.T) {
 	for _, testCase := range []struct {
 		name, target                  string
 		desired, observed, completion *string
+		attempts                      int
 		submissions                   int64
 	}{
-		{"already ON", powerOn, new(powerOn), new(powerOn), new(vmComplete), 0},
-		{"already OFF", powerOff, new(powerOff), new(powerOff), new(vmComplete), 0},
-		{"conflicting intent", powerOn, new(powerOff), new(powerOn), new(vmComplete), 1},
-		{"observed transition", powerOn, new(powerOn), new(powerOff), new(vmComplete), 1},
-		{"pending", powerOn, new(powerOn), new(powerOn), new("PENDING"), 1},
-		{"unknown state", powerOn, new(powerOn), new(powerOn), new("UNKNOWN"), 1},
-		{"missing state", powerOn, new(powerOn), new(powerOn), nil, 1},
-		{"missing desired power", powerOn, nil, new(powerOn), new(vmComplete), 1},
-		{"missing observed power", powerOn, new(powerOn), nil, new(vmComplete), 1},
+		{"already ON", powerOn, new(powerOn), new(powerOn), new(vmComplete), 2, 0},
+		{"already OFF", powerOff, new(powerOff), new(powerOff), new(vmComplete), 2, 0},
+		{"conflicting intent", powerOn, new(powerOff), new(powerOn), new(vmComplete), 1, 1},
+		{"observed transition", powerOn, new(powerOn), new(powerOff), new(vmComplete), 1, 1},
+		{"pending", powerOn, new(powerOn), new(powerOn), new("PENDING"), 1, 1},
+		{"unknown state", powerOn, new(powerOn), new(powerOn), new("UNKNOWN"), 1, 1},
+		{"missing state", powerOn, new(powerOn), new(powerOn), nil, 1, 1},
+		{"missing desired power", powerOn, nil, new(powerOn), new(vmComplete), 1, 1},
+		{"missing observed power", powerOn, new(powerOn), nil, new(vmComplete), 1, 1},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -120,12 +121,7 @@ func TestPowerStateNoop(t *testing.T) {
 				operation = node.Stop
 			}
 
-			attempts := 1
-			if testCase.submissions == 0 {
-				attempts = 2
-			}
-
-			for range attempts {
+			for range testCase.attempts {
 				err := operation()
 				if err != nil {
 					t.Fatal(err)
