@@ -17,6 +17,20 @@ import (
 	"github.com/nutanix/docker-machine/machine/driver"
 )
 
+const (
+	foreignVMMode = "foreign-vm"
+	namedNICMode  = "nic-named"
+)
+
+const (
+	matchedNICMode       = "nic-matched"
+	journalSubnetUUIDKey = "subnetUuid"
+	unknownAbsentMode    = "unknown-absent"
+	metadataUUIDKey      = "uuid"
+	unmatchedNICAPICalls = 12
+	matchedNICAPICalls   = 6
+)
+
 const durableVMUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
 
 type durableFixture struct {
@@ -36,7 +50,7 @@ func TestCreateDurableRecovery(t *testing.T) {
 	t.Parallel()
 
 	for _, mode := range []string{
-		"lost-create-response", "lost-allocation-response", "IP-timeout", "failed-task", "unknown-absent", "foreign-vm",
+		"lost-create-response", "lost-allocation-response", "IP-timeout", "failed-task", unknownAbsentMode, foreignVMMode,
 	} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
@@ -63,7 +77,7 @@ func TestCreateDurableRecovery(t *testing.T) {
 
 			wantCreates := 1
 
-			wantError := mode == "failed-task" || mode == "unknown-absent" || mode == "foreign-vm"
+			wantError := mode == "failed-task" || mode == unknownAbsentMode || mode == foreignVMMode
 			if (err != nil) != wantError || fixture.allocations != 1 || fixture.creates != wantCreates || fixture.deletes != 0 {
 				t.Fatalf("restart: alloc=%d create=%d delete=%d vm=%q err=%v",
 					fixture.allocations, fixture.creates, fixture.deletes, restored.VMId, err)
@@ -179,7 +193,7 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 		endpoints := []map[string]string{{"ip": "10.0.0.10"}}
 
 		name := "test"
-		if f.mode == "foreign-vm" {
+		if f.mode == foreignVMMode {
 			name = "foreign"
 		}
 
@@ -191,8 +205,8 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 		nics := f.statusNICs(endpoints)
 
 		writeRemovalResponse(t, writer, map[string]any{
-			"metadata": map[string]string{"uuid": durableVMUUID},
-			"spec":     map[string]any{"name": name, "cluster_reference": map[string]string{"uuid": "cluster-id"}},
+			"metadata": map[string]string{metadataUUIDKey: durableVMUUID},
+			"spec":     map[string]any{"name": name, "cluster_reference": map[string]string{metadataUUIDKey: "cluster-id"}},
 			"status":   map[string]any{"state": "COMPLETE", "resources": map[string]any{"power_state": "ON", "nic_list": nics}},
 		})
 	default:
@@ -201,7 +215,7 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 			"/api/nutanix/v3/subnets/list":  fixtureJSON(t, "subnets.json"),
 			"/api/nutanix/v3/images/list":   fixtureJSON(t, "images.json"),
 		}
-		if f.mode == "nic-named" {
+		if f.mode == namedNICMode {
 			responses["/api/nutanix/v3/subnets/list"] = []byte(strings.NewReplacer(
 				fixtureVLANSubnet, fixtureDirectSubnet, fixtureOverlaySubnet, managementSubnet,
 			).Replace(string(fixtureJSON(t, "subnets.json"))))
@@ -214,7 +228,7 @@ func (f *durableFixture) serve(t *testing.T, writer http.ResponseWriter, request
 func (f *durableFixture) statusNICs(endpoints []map[string]string) []any {
 	if !strings.HasPrefix(f.mode, "nic-") {
 		return []any{map[string]any{
-			"subnet_reference": map[string]string{"uuid": fixtureDirectSubnet}, "ip_endpoint_list": endpoints,
+			"subnet_reference": map[string]string{metadataUUIDKey: fixtureDirectSubnet}, "ip_endpoint_list": endpoints,
 		}}
 	}
 
@@ -310,15 +324,15 @@ func (f *durableFixture) create(t *testing.T, writer http.ResponseWriter, reques
 
 	f.nics = intent.Spec.Resources.NicList
 
-	f.present = f.mode != "unknown-absent"
-	if f.mode == "lost-create-response" || f.mode == "unknown-absent" || f.mode == "foreign-vm" {
+	f.present = f.mode != unknownAbsentMode
+	if f.mode == "lost-create-response" || f.mode == unknownAbsentMode || f.mode == foreignVMMode {
 		loseCreateResponse(t, writer)
 
 		return
 	}
 
 	writeRemovalResponse(t, writer, map[string]any{
-		"metadata": map[string]any{"uuid": durableVMUUID},
+		"metadata": map[string]any{metadataUUIDKey: durableVMUUID},
 		"status":   map[string]any{"execution_context": map[string]any{"task_uuid": "task"}},
 	})
 }
@@ -347,7 +361,7 @@ func TestCreateManagementIntent(t *testing.T) {
 	for _, selector := range []string{"", managementSubnet, strings.ToUpper(managementSubnet)} {
 		t.Run("selector="+selector, func(t *testing.T) {
 			t.Parallel()
-			fixture := newDurableFixture(t, "nic-matched")
+			fixture := newDurableFixture(t, matchedNICMode)
 			node := payloadDriver(t, fixture.server, "")
 			node.Subnet = []string{fixtureDirectSubnet, managementSubnet}
 
@@ -369,15 +383,15 @@ func TestCreateManagementIntent(t *testing.T) {
 			}
 
 			journal := readIntentJournal(t, node)
-			if journal["subnetUuid"] != wantSubnet || node.IPAddress != wantIP {
-				t.Fatalf("management subnet=%v IP=%s", journal["subnetUuid"], node.IPAddress)
+			if journal[journalSubnetUUIDKey] != wantSubnet || node.IPAddress != wantIP {
+				t.Fatalf("management subnet=%v IP=%s", journal[journalSubnetUUIDKey], node.IPAddress)
 			}
 
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 
 			if *fixture.nics[0].SubnetReference.UUID != fixtureDirectSubnet ||
-				*fixture.nics[1].SubnetReference.UUID != managementSubnet || fixture.calls != 6 {
+				*fixture.nics[1].SubnetReference.UUID != managementSubnet || fixture.calls != matchedNICAPICalls {
 				t.Fatalf("NIC order or API budget changed: calls=%d nics=%v", fixture.calls, fixture.nics)
 			}
 		})
@@ -404,7 +418,7 @@ func TestCreateManagementIntentRejectedBeforeWrites(t *testing.T) {
 	for _, selector := range []string{"invalid", managementSubnet, fixtureDirectSubnet} {
 		t.Run(selector, func(t *testing.T) {
 			t.Parallel()
-			fixture := newDurableFixture(t, "nic-matched")
+			fixture := newDurableFixture(t, matchedNICMode)
 			node := payloadDriver(t, fixture.server, "")
 
 			node.Subnet = []string{fixtureDirectSubnet}
@@ -439,7 +453,7 @@ func TestCreateQueuePostconditionRecovery(t *testing.T) {
 	t.Parallel()
 
 	for _, mode := range []string{
-		"nic-matched", "nic-named", "nic-nil-queues", "nic-mismatch", "nic-missing", "nic-duplicate", "nic-nil",
+		matchedNICMode, namedNICMode, "nic-nil-queues", "nic-mismatch", "nic-missing", "nic-duplicate", "nic-nil",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
@@ -448,7 +462,7 @@ func TestCreateQueuePostconditionRecovery(t *testing.T) {
 			node.Timeout = 1
 
 			node.Subnet = []string{fixtureDirectSubnet, managementSubnet}
-			if mode == "nic-named" {
+			if mode == namedNICMode {
 				node.Subnet = []string{"vlan", "overlay"}
 			}
 
@@ -456,7 +470,7 @@ func TestCreateQueuePostconditionRecovery(t *testing.T) {
 
 			err := node.Create()
 
-			matched := mode == "nic-matched" || mode == "nic-named"
+			matched := mode == matchedNICMode || mode == namedNICMode
 			if matched {
 				if err != nil {
 					t.Fatal(err)
@@ -468,12 +482,12 @@ func TestCreateQueuePostconditionRecovery(t *testing.T) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 
-			wantCalls := 6
+			wantCalls := matchedNICAPICalls
 			if !matched {
-				wantCalls = 12
+				wantCalls = unmatchedNICAPICalls
 			}
 
-			if mode == "nic-named" {
+			if mode == namedNICMode {
 				wantCalls++
 			}
 
@@ -516,7 +530,7 @@ func assertQueueRecovery(t *testing.T, fixture *durableFixture, node *driver.Nut
 	}
 
 	fixture.mu.Lock()
-	fixture.mode = "nic-matched"
+	fixture.mode = matchedNICMode
 	fixture.mu.Unlock()
 
 	err = restored.Create()
@@ -531,7 +545,7 @@ func assertQueueRecovery(t *testing.T, fixture *durableFixture, node *driver.Nut
 
 func TestManagementSelectorChangedAfterReserve(t *testing.T) {
 	t.Parallel()
-	fixture := newDurableFixture(t, "nic-matched")
+	fixture := newDurableFixture(t, matchedNICMode)
 	node := payloadDriver(t, fixture.server, "")
 	node.Subnet = []string{fixtureDirectSubnet, managementSubnet}
 	decodePayloadJSON(t, []byte(`{"VMManagementNetwork":"ffffffff-ffff-ffff-ffff-ffffffffffff"}`), node)
@@ -559,7 +573,7 @@ func TestManagementSelectorChangedAfterReserve(t *testing.T) {
 	}
 
 	after := readIntentJournal(t, node)
-	if after["binding"] != before["binding"] || after["subnetUuid"] != before["subnetUuid"] {
+	if after["binding"] != before["binding"] || after[journalSubnetUUIDKey] != before[journalSubnetUUIDKey] {
 		t.Fatal("journal rebound")
 	}
 

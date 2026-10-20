@@ -17,6 +17,10 @@ import (
 )
 
 const (
+	recoveryDirectoryMode = 0o700
+)
+
+const (
 	workerConfigEnvironment     = "NUTANIX_FIXTURE_WORKER_CONFIG"
 	workerResultEnvironment     = "NUTANIX_FIXTURE_WORKER_RESULT"
 	workerCheckpointEnvironment = "NUTANIX_FIXTURE_WORKER_CHECKPOINT"
@@ -223,7 +227,7 @@ func checkpointMachine(t *testing.T, source, target string) {
 
 		name := filepath.Join(target, filepath.FromSlash(path))
 		if entry.IsDir() {
-			return os.MkdirAll(name, 0o700)
+			return os.MkdirAll(name, recoveryDirectoryMode)
 		}
 
 		data, readErr := os.ReadFile(filepath.Join(source, filepath.FromSlash(path)))

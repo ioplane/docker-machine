@@ -157,7 +157,7 @@ make check
 ```
 
 `make build` writes the static Linux binary to `build/docker-machine-driver-nutanix`.
-`make check` runs tests, race detection, vet, golangci-lint v2, formatter checks,
+`make check` runs tests, race detection, vet, golangci-lint v2.15.0, gofumpt checks,
 govulncheck and the build. It requires no Prism or Rancher credentials.
 The compatibility tests use an isolated subprocess and local HTTP fixtures.
 `make integration-build integration` additionally exercises the real SDK through

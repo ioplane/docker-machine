@@ -21,6 +21,11 @@ import (
 )
 
 const (
+	vmNICQueuesField         = "VMNicQueues"
+	pluginTestTimeoutSeconds = 15
+)
+
+const (
 	rpcTestProcessEnv = "NUTANIX_RPC_TEST_PROCESS"
 	rpcConfigVersion  = 3
 	rpcIOTimeout      = 5 * time.Second
@@ -93,8 +98,8 @@ func TestRPCPluginConfigFromFlags(t *testing.T) {
 	rpcCall(t, client, "SetConfigFromFlags", &options, &struct{}{})
 
 	config := rpcConfig(t, client)
-	if string(config["VMNicQueues"]) != `"2"` {
-		t.Fatalf("RPC configuration did not preserve explicit queues: %s", config["VMNicQueues"])
+	if string(config[vmNICQueuesField]) != `"2"` {
+		t.Fatalf("RPC configuration did not preserve explicit queues: %s", config[vmNICQueuesField])
 	}
 
 	for _, invalid := range []string{"0", "-1", "5", "auto", "1.5"} {
@@ -120,11 +125,11 @@ func TestRPCPluginLegacyConfigRoundTrip(t *testing.T) {
 		t.Fatal("legacy VMId changed across the RPC configuration round trip")
 	}
 
-	if _, present := config["VMNicQueues"]; present {
+	if _, present := config[vmNICQueuesField]; present {
 		t.Fatal("loading legacy JSON materialized an omitted queue setting")
 	}
 
-	config["VMNicQueues"] = json.RawMessage(`"2"`)
+	config[vmNICQueuesField] = json.RawMessage(`"2"`)
 
 	updated, err := json.Marshal(config)
 	if err != nil {
@@ -134,7 +139,7 @@ func TestRPCPluginLegacyConfigRoundTrip(t *testing.T) {
 	rpcCall(t, client, "SetConfigRaw", updated, &struct{}{})
 
 	roundTrip := rpcConfig(t, client)
-	if string(roundTrip["VMId"]) != `"legacy-vm-id"` || string(roundTrip["VMNicQueues"]) != `"2"` {
+	if string(roundTrip["VMId"]) != `"legacy-vm-id"` || string(roundTrip[vmNICQueuesField]) != `"2"` {
 		t.Fatal("new queue field or legacy VMId changed across the RPC configuration round trip")
 	}
 }
@@ -219,7 +224,7 @@ func rpcExecutable(t *testing.T) string {
 func startRPCPlugin(t *testing.T) *rpc.Client {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), pluginTestTimeoutSeconds*time.Second)
 	t.Cleanup(cancel)
 	//nolint:gosec // The test explicitly accepts a prebuilt binary or reexecutes itself.
 	command := exec.CommandContext(ctx, rpcExecutable(t))

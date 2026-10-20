@@ -122,7 +122,6 @@ linters:
 formatters:
   enable:
     - gofumpt
-    - goimports
 
 issues:
   max-issues-per-linter: 0

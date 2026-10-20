@@ -13,6 +13,10 @@ import (
 )
 
 const (
+	powerTestVMID = "vm-id"
+)
+
+const (
 	powerOn    = "ON"
 	powerOff   = "OFF"
 	vmComplete = "COMPLETE"
@@ -55,7 +59,7 @@ func TestPowerDeadlineAndPostcondition(t *testing.T) {
 
 			node := payloadDriver(t, server, "")
 			node.Timeout = 1
-			node.VMId = "vm-id"
+			node.VMId = powerTestVMID
 
 			err := node.Start()
 			if (err != nil) != testCase.wantErr || testCase.wantErr && !errors.Is(err, context.DeadlineExceeded) {
@@ -114,7 +118,7 @@ func TestPowerStateNoop(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			node := payloadDriver(t, server, "")
-			node.VMId = "vm-id"
+			node.VMId = powerTestVMID
 
 			operation := node.Start
 			if testCase.target == powerOff {
@@ -172,7 +176,7 @@ func TestPowerResponseIdentity(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			node := payloadDriver(t, server, "")
-			node.VMId = "vm-id"
+			node.VMId = powerTestVMID
 
 			err := node.Start()
 			if err == nil || submissions.Load() != 0 {
@@ -196,7 +200,7 @@ func TestRestartPowerTransitions(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			node := payloadDriver(t, server, "")
-			node.VMId = "vm-id"
+			node.VMId = powerTestVMID
 
 			err := node.Restart()
 			if err != nil {
@@ -250,7 +254,7 @@ func restartPowerHandler(t *testing.T, initial string, powers chan<- string, sub
 		response := powerFixtureResponse(request, *power.Load(), submissions)
 		if request.Method == http.MethodGet && request.URL.Path == "/api/nutanix/v3/vms/vm-id" {
 			response = &prismv3.VMIntentResponse{
-				Metadata: &prismv3.Metadata{UUID: new("vm-id")},
+				Metadata: &prismv3.Metadata{UUID: new(powerTestVMID)},
 				Spec:     &prismv3.VM{Resources: &prismv3.VMResources{PowerState: power.Load()}},
 				Status: &prismv3.VMDefStatus{
 					State:     new(vmComplete),
@@ -280,7 +284,7 @@ func powerFixtureResponse(request *http.Request, observed string, submissions *a
 		response = &prismv3.TasksResponse{Status: new("SUCCEEDED")}
 	default:
 		response = &prismv3.VMIntentResponse{
-			Metadata: &prismv3.Metadata{UUID: new("vm-id")},
+			Metadata: &prismv3.Metadata{UUID: new(powerTestVMID)},
 			Spec:     &prismv3.VM{Resources: &prismv3.VMResources{PowerState: new(powerOff)}},
 			Status:   &prismv3.VMDefStatus{Resources: &prismv3.VMResourcesDefStatus{PowerState: new(observed)}},
 		}

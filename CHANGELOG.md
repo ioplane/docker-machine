@@ -31,6 +31,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Development lint uses pinned golangci-lint v2.15.0 and gofumpt as the single formatter. Updated analyzer checks retain fixture values and require one lost Create response plus one successful serialized recovery.
+
 - Root and isolated integration modules pin Prism SDK `f9d6c857660c455fbc5747676de09b1794375502`. Request and endpoint failures use sanitized diagnostics with preserved typed causes; private HTTP defaults and provider fallback fixes are included. Driver RPC, persisted JSON, optional queue omission and the Rancher Machine consumer pin remain unchanged.
 
 - Fork pull request titles and descriptions and new commit messages use English; commit titles retain declarative Conventional Commits.

@@ -13,6 +13,10 @@ import (
 	"github.com/rancher/machine/libmachine/state"
 )
 
+const (
+	consumerCheckpointName = "consumer"
+)
+
 type consumerOptions struct {
 	queueOptions
 
@@ -71,7 +75,7 @@ func consumerCheckpoint(t *testing.T, mode string,
 	writeFixtureKey(t, script, "#!/bin/sh\necho fixture-script-content\n")
 	request := drivers.CreateRecoveryContext{CustomInstallScriptPath: script}
 
-	if mode == "consumer" {
+	if mode == consumerCheckpointName {
 		eligible, err := prepareConsumerRecovery(t, node, nil, request)
 		if err != nil || eligible {
 			t.Fatalf("fresh recovery preparation: eligible=%v err=%v", eligible, err)
@@ -136,7 +140,7 @@ func TestConsumerRecoveryIneligibleBeforeInputs(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			t.Parallel()
 
-			mode := "consumer"
+			mode := consumerCheckpointName
 			if phase == "legacy" {
 				mode = "ordinary"
 			}
@@ -185,7 +189,7 @@ func TestConsumerRecoveryPendingDoesNotPrepareSubmission(t *testing.T) {
 	for _, phase := range []string{"reserved", "submitted", "accepted"} {
 		t.Run(phase, func(t *testing.T) {
 			t.Parallel()
-			node, fixture, request := consumerCheckpoint(t, "consumer")
+			node, fixture, request := consumerCheckpoint(t, consumerCheckpointName)
 			alterConsumerJournal(t, node, "phase", phase)
 			copyPath := filepath.Join(t.TempDir(), "identical-script")
 			writeFixtureKey(t, copyPath, "#!/bin/sh\necho fixture-script-content\n")
@@ -213,7 +217,7 @@ func TestConsumerRecoveryIntentBoundary(t *testing.T) {
 	for _, failure := range []string{"script", "hostname", "VM intent", "missing key", "VM identity", "corrupt UUID"} {
 		t.Run(failure, func(t *testing.T) {
 			t.Parallel()
-			node, fixture, request := consumerCheckpoint(t, "consumer")
+			node, fixture, request := consumerCheckpoint(t, consumerCheckpointName)
 			candidate := recoveryCandidate(node)
 			opts := currentConsumerOptions(node)
 
@@ -255,7 +259,7 @@ func TestConsumerRecoveryIntentBoundary(t *testing.T) {
 func TestCreateSSHDefaultSurvivesConsumerLifecycle(t *testing.T) {
 	t.Parallel()
 
-	for _, mode := range []string{"ordinary", "consumer"} {
+	for _, mode := range []string{"ordinary", consumerCheckpointName} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 
@@ -275,7 +279,7 @@ func TestCreateSSHDefaultSurvivesConsumerLifecycle(t *testing.T) {
 				t.Fatal("unexpected default SSH username")
 			}
 
-			if mode == "consumer" {
+			if mode == consumerCheckpointName {
 				err = os.Remove(request.CustomInstallScriptPath)
 				if err != nil {
 					t.Fatal(err)
@@ -306,7 +310,7 @@ func TestCreateSSHDefaultSurvivesConsumerLifecycle(t *testing.T) {
 func TestConsumerRecoveryManagementSelectorBoundary(t *testing.T) {
 	t.Parallel()
 
-	node, fixture, request := consumerCheckpoint(t, "consumer")
+	node, fixture, request := consumerCheckpoint(t, consumerCheckpointName)
 	candidate := recoveryCandidate(node)
 	opts := currentConsumerOptions(node)
 	opts.management = fixtureDirectSubnet

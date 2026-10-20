@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+const (
+	releaseDateCaptureIndex = 5
+)
+
 type policyError string
 
 func (e policyError) Error() string { return string(e) }
@@ -47,7 +51,7 @@ func releaseDate(line string, previous time.Time) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("%w: invalid release heading: %q", errPolicy, line)
 	}
 
-	date, err := time.Parse(time.DateOnly, match[5])
+	date, err := time.Parse(time.DateOnly, match[releaseDateCaptureIndex])
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid release date: %w", err)
 	}

@@ -13,6 +13,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const (
+	managementTestSubnet = "management"
+)
+
 type networkProfile struct {
 	inventory *prismv3.SubnetListIntentResponse
 	queries   []string
@@ -89,7 +93,7 @@ func TestManagementNICIdentityAndAddresses(t *testing.T) {
 			t.Parallel()
 
 			management := &prismv3.VMNicOutputStatus{
-				SubnetReference: &prismv3.Reference{UUID: new("management")}, IPEndpointList: testCase.endpoints,
+				SubnetReference: &prismv3.Reference{UUID: new(managementTestSubnet)}, IPEndpointList: testCase.endpoints,
 			}
 			data := &prismv3.VMNicOutputStatus{
 				SubnetReference: &prismv3.Reference{UUID: new("data")},
@@ -97,7 +101,7 @@ func TestManagementNICIdentityAndAddresses(t *testing.T) {
 			}
 
 			for _, nics := range [][]*prismv3.VMNicOutputStatus{{nil, data, management}, {management, data}} {
-				address, err := managementIP(nics, "management")
+				address, err := managementIP(nics, managementTestSubnet)
 				if err != nil || address != testCase.want {
 					t.Fatalf("management identity: address=%s want=%s err=%v", address, testCase.want, err)
 				}
@@ -109,9 +113,9 @@ func TestManagementNICIdentityAndAddresses(t *testing.T) {
 func TestManagementIdentityAmbiguity(t *testing.T) {
 	t.Parallel()
 
-	nic := &prismv3.VMNicOutputStatus{SubnetReference: &prismv3.Reference{UUID: new("management")}}
+	nic := &prismv3.VMNicOutputStatus{SubnetReference: &prismv3.Reference{UUID: new(managementTestSubnet)}}
 
-	_, err := managementIP([]*prismv3.VMNicOutputStatus{nic, nic}, "management")
+	_, err := managementIP([]*prismv3.VMNicOutputStatus{nic, nic}, managementTestSubnet)
 	if err == nil {
 		t.Fatal("duplicate management NIC identity accepted")
 	}
@@ -163,9 +167,9 @@ func TestManagementEndpointRefusal(t *testing.T) {
 	}
 
 	address, err := managementIP([]*prismv3.VMNicOutputStatus{{
-		SubnetReference: &prismv3.Reference{UUID: new("management")}, IsConnected: new(false),
+		SubnetReference: &prismv3.Reference{UUID: new(managementTestSubnet)}, IsConnected: new(false),
 		IPEndpointList: []*prismv3.IPAddress{{IP: new("10.0.0.1")}},
-	}}, "management")
+	}}, managementTestSubnet)
 	if err != nil || address != "" {
 		t.Fatalf("disconnected NIC address selected: %s, err=%v", address, err)
 	}

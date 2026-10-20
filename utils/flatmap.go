@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+const (
+	flatmapPathSeparator = "."
+)
+
 // UnknownVariableValue marks an unknown Terraform flat-map value.
 const UnknownVariableValue = "74D93920-ED26-11E3-AC10-0800200C9A66"
 
@@ -38,7 +42,7 @@ func Expand(flat map[string]string, key string) any {
 	}
 
 	// Check if this is a prefix in the map
-	prefix := key + "."
+	prefix := key + flatmapPathSeparator
 	for mapKey := range flat {
 		if strings.HasPrefix(mapKey, prefix) {
 			return expandMap(flat, prefix)
@@ -75,13 +79,13 @@ func expandArray(flat map[string]string, prefix string) []any {
 	computed := map[string]bool{}
 
 	for mapKey := range flat {
-		if !strings.HasPrefix(mapKey, prefix+".") {
+		if !strings.HasPrefix(mapKey, prefix+flatmapPathSeparator) {
 			continue
 		}
 
 		key := mapKey[len(prefix)+1:]
 
-		key, _, _ = strings.Cut(key, ".")
+		key, _, _ = strings.Cut(key, flatmapPathSeparator)
 
 		// skip the count value
 		if key == "#" {
@@ -141,7 +145,7 @@ func expandMap(flat map[string]string, prefix string) map[string]any {
 
 		key := mapKey[len(prefix):]
 
-		key, _, _ = strings.Cut(key, ".")
+		key, _, _ = strings.Cut(key, flatmapPathSeparator)
 
 		if _, ok := result[key]; ok {
 			continue

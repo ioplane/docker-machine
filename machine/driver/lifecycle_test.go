@@ -14,6 +14,11 @@ import (
 	prismv3 "github.com/nutanix-cloud-native/prism-go-client/v3"
 )
 
+const (
+	lifecycleTestTaskID = "task-id"
+	sharedBudgetSeconds = 7
+)
+
 type lifecycleTransport func(*http.Request) (*http.Response, error)
 
 func (transport lifecycleTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -72,7 +77,7 @@ func TestTaskTerminalContract(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 				defer cancel()
 
-				err := waitForTask(ctx, conn, "task-id")
+				err := waitForTask(ctx, conn, lifecycleTestTaskID)
 				if calls != 1 || errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("terminal response polled again: calls=%d err=%v", calls, err)
 				}
@@ -103,7 +108,7 @@ func TestTaskReadRetryBudget(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 				defer cancel()
 
-				err := waitForTask(ctx, conn, "task-id")
+				err := waitForTask(ctx, conn, lifecycleTestTaskID)
 				if err != nil || calls != 2 {
 					t.Fatalf("observation retry: calls=%d err=%v", calls, err)
 				}
@@ -118,7 +123,7 @@ func TestCreateSharedDeadlinePreservesVM(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Now()
 
-		ctx, cancel := context.WithTimeout(t.Context(), 7*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), sharedBudgetSeconds*time.Second)
 		defer cancel()
 
 		tasks, deletes := 0, 0
@@ -143,11 +148,11 @@ func TestCreateSharedDeadlinePreservesVM(t *testing.T) {
 		node := NewDriver("fixture", "")
 		response := &prismv3.VMIntentResponse{
 			Metadata: &prismv3.Metadata{UUID: new("vm-id")},
-			Status:   &prismv3.VMDefStatus{ExecutionContext: &prismv3.ExecutionContext{TaskUUID: "task-id"}},
+			Status:   &prismv3.VMDefStatus{ExecutionContext: &prismv3.ExecutionContext{TaskUUID: lifecycleTestTaskID}},
 		}
 
 		err := node.finishCreate(ctx, conn, response, "management-subnet")
-		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != 7*time.Second ||
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != sharedBudgetSeconds*time.Second ||
 			deletes != 0 || node.VMId != "vm-id" {
 			t.Fatalf("shared budget/identity: elapsed=%v deletes=%d vm=%s err=%v", time.Since(start), deletes, node.VMId, err)
 		}
@@ -198,7 +203,7 @@ func TestTaskPendingAndThrottlingDeadline(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 				defer cancel()
 
-				err := waitForTask(ctx, conn, "task-id")
+				err := waitForTask(ctx, conn, lifecycleTestTaskID)
 				if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != time.Second || calls != 1 {
 					t.Fatalf("poll budget: elapsed=%v calls=%d err=%v", time.Since(start), calls, err)
 				}

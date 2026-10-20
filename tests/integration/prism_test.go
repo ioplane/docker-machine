@@ -23,6 +23,10 @@ import (
 )
 
 const (
+	prismResponseMaxBytes = 1 << 20
+)
+
+const (
 	fixtureHTTPTimeout    = 5 * time.Second
 	fixtureMemoryMiB      = 2048
 	fixtureTimeoutSeconds = 5
@@ -212,7 +216,7 @@ func requestFixture(t *testing.T, client *http.Client, endpoint, body string) []
 		t.Fatalf("fixture HTTP status=%d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, prismResponseMaxBytes))
 	if err != nil {
 		t.Fatal(err)
 	}

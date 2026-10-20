@@ -21,6 +21,11 @@ import (
 )
 
 const (
+	payloadMaxBodyBytes   = 1 << 20
+	payloadCreateAPICalls = 5
+)
+
+const (
 	fixturePublicKey     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtqJ7zOtqQtYqOo0CpvDXNlMhV3HeJDpjrASKGLWdop"
 	fixtureDirectSubnet  = "11111111-1111-1111-1111-111111111111"
 	fixtureVLANSubnet    = "22222222-2222-2222-2222-222222222222"
@@ -79,7 +84,7 @@ func TestCreateQueuePayload(t *testing.T) {
 			assertCorePayload(t, payload)
 			assertDefaultCloudInit(t, payloadResources(t, payload))
 
-			if calls := fixture.calls.Load(); calls != 5 {
+			if calls := fixture.calls.Load(); calls != payloadCreateAPICalls {
 				t.Errorf("create fixture received %d API calls, want three lookups, allocator and create", calls)
 			}
 		})
@@ -233,7 +238,7 @@ func captureCreatePayload(t *testing.T, requests chan<- createPayload,
 
 	var payload createPayload
 
-	err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 1<<20)).Decode(&payload)
+	err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, payloadMaxBodyBytes)).Decode(&payload)
 	if err != nil {
 		t.Errorf("decode create payload: %v", err)
 

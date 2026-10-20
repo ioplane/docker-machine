@@ -34,6 +34,11 @@ import (
 )
 
 const (
+	checkpointFileMaxBytes    = 1 << 20
+	checkpointArchiveMaxBytes = 4 << 20
+)
+
+const (
 	consumerCompletePUT      = 3
 	consumerNICQueues        = "2"
 	rotatedFixtureCredential = "rotated"
@@ -187,7 +192,7 @@ func encodeCheckpointSecret(w http.ResponseWriter, secret *corev1.Secret) {
 func decodeCheckpointSecret(writer http.ResponseWriter, request *http.Request) (corev1.Secret, error) {
 	var secret corev1.Secret
 
-	data, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 4<<20))
+	data, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, checkpointArchiveMaxBytes))
 	if err == nil {
 		scheme := runtime.NewScheme()
 		scheme.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.Secret{})
@@ -211,7 +216,7 @@ func readConsumerCheckpoint(data []byte) (_ consumerCheckpoint, resultErr error)
 
 	defer func() { resultErr = errors.Join(resultErr, reader.Close()) }()
 
-	archive := tar.NewReader(io.LimitReader(reader, 4<<20))
+	archive := tar.NewReader(io.LimitReader(reader, checkpointArchiveMaxBytes))
 	files := map[string][]byte{}
 
 	for {
@@ -228,7 +233,7 @@ func readConsumerCheckpoint(data []byte) (_ consumerCheckpoint, resultErr error)
 			continue
 		}
 
-		content, readErr := io.ReadAll(io.LimitReader(archive, 1<<20))
+		content, readErr := io.ReadAll(io.LimitReader(archive, checkpointFileMaxBytes))
 		if readErr != nil {
 			return result, fmt.Errorf("read checkpoint file: %w", readErr)
 		}

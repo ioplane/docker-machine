@@ -9,6 +9,10 @@ import (
 	"github.com/rancher/machine/libmachine/mcnflag"
 )
 
+const (
+	queueTestMachineName = "test"
+)
+
 type queueOptions struct {
 	queues     string
 	management string
@@ -37,7 +41,7 @@ func TestManagementNetworkFlagAndValidation(t *testing.T) {
 	assertManagementNetworkFlag(t)
 
 	for _, value := range []string{"", fixtureDirectSubnet, "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "invalid", " "} {
-		node := driver.NewDriver("test", "")
+		node := driver.NewDriver(queueTestMachineName, "")
 		err := node.SetConfigFromFlags(queueOptions{management: value, sockets: 2, cores: 2})
 
 		invalid := value == "invalid" || value == " "
@@ -69,7 +73,7 @@ func assertManagementNetworkFlag(t *testing.T) {
 
 	found := false
 
-	for _, flag := range driver.NewDriver("test", "").GetCreateFlags() {
+	for _, flag := range driver.NewDriver(queueTestMachineName, "").GetCreateFlags() {
 		if flag.String() == "nutanix-vm-management-network" {
 			value, ok := flag.(mcnflag.StringFlag)
 			if !ok || value.Value != "" {
@@ -111,7 +115,7 @@ func (queueOptions) Bool(string) bool { return false }
 func TestQueueFlagIsOptionalString(t *testing.T) {
 	t.Parallel()
 
-	for _, flag := range driver.NewDriver("test", "").GetCreateFlags() {
+	for _, flag := range driver.NewDriver(queueTestMachineName, "").GetCreateFlags() {
 		if flag.String() != "nutanix-vm-nic-queues" {
 			continue
 		}
@@ -154,7 +158,7 @@ func TestQueueConfiguration(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			nodeDriver := driver.NewDriver("test", "")
+			nodeDriver := driver.NewDriver(queueTestMachineName, "")
 
 			err := nodeDriver.SetConfigFromFlags(queueOptions{
 				queues: testCase.value, sockets: testCase.sockets, cores: testCase.cores,
@@ -224,7 +228,7 @@ func TestTimeoutUsesRequestedValue(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			nodeDriver := driver.NewDriver("test", "")
+			nodeDriver := driver.NewDriver(queueTestMachineName, "")
 			nodeDriver.Timeout = testCase.previous
 
 			err := nodeDriver.SetConfigFromFlags(timeoutOptions{

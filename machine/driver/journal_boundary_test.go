@@ -10,6 +10,13 @@ import (
 	"github.com/nutanix/docker-machine/machine/driver"
 )
 
+const (
+	journalLostResponseMode    = "lost-create-response"
+	journalMachineDir          = "machines"
+	publicJournalFileMode      = 0o644
+	publicJournalDirectoryMode = 0o777
+)
+
 const journalTestDirectoryMode = 0o700
 
 func TestPreCreateCheckpointRecovery(t *testing.T) {
@@ -26,7 +33,7 @@ func TestPreCreateCheckpointRecovery(t *testing.T) {
 
 func runCheckpointRecovery(t *testing.T, expectedCreates int) {
 	t.Helper()
-	fixture := newDurableFixture(t, "lost-create-response")
+	fixture := newDurableFixture(t, journalLostResponseMode)
 	node := payloadDriver(t, fixture.server, "")
 
 	err := node.PreCreateCheck()
@@ -34,7 +41,9 @@ func runCheckpointRecovery(t *testing.T, expectedCreates int) {
 		t.Fatal(err)
 	}
 
-	checkpoint, err := os.ReadFile(filepath.Join(node.StorePath, "machines", node.MachineName, "nutanix-create.json"))
+	checkpoint, err := os.ReadFile(
+		filepath.Join(node.StorePath, journalMachineDir, node.MachineName, "nutanix-create.json"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +89,7 @@ func restoreDriverCheckpoint(t *testing.T, public, checkpoint []byte) *driver.Nu
 	restored := new(driver.NutanixDriver)
 	decodePayloadJSON(t, public, restored)
 	restored.StorePath = t.TempDir()
-	directory := filepath.Join(restored.StorePath, "machines", restored.MachineName)
+	directory := filepath.Join(restored.StorePath, journalMachineDir, restored.MachineName)
 
 	err := os.MkdirAll(directory, journalTestDirectoryMode)
 	if err != nil {
@@ -101,7 +110,7 @@ func TestCreateSerialization(t *testing.T) {
 	for _, sameInstance := range []bool{true, false} {
 		t.Run(map[bool]string{true: "same driver", false: "same machine store"}[sameInstance], func(t *testing.T) {
 			t.Parallel()
-			fixture := newDurableFixture(t, "lost-create-response")
+			fixture := newDurableFixture(t, journalLostResponseMode)
 			node := payloadDriver(t, fixture.server, "")
 
 			other := node
@@ -119,8 +128,17 @@ func TestCreateSerialization(t *testing.T) {
 
 			close(start)
 
+			failures := 0
+
 			for range 2 {
-				<-results
+				err := <-results
+				if err != nil {
+					failures++
+				}
+			}
+
+			if failures != 1 {
+				t.Fatalf("concurrent Create results: failures=%d, want one lost response and one recovery", failures)
 			}
 
 			fixture.mu.Lock()
@@ -184,7 +202,7 @@ func TestJournalFilesystemBoundary(t *testing.T) {
 			fixture := newPayloadFixture(t, "")
 			node := payloadDriver(t, fixture.server, "")
 
-			directory := filepath.Join(node.StorePath, "machines", node.MachineName)
+			directory := filepath.Join(node.StorePath, journalMachineDir, node.MachineName)
 
 			err := os.MkdirAll(directory, journalTestDirectoryMode)
 			if err != nil {
@@ -197,7 +215,7 @@ func TestJournalFilesystemBoundary(t *testing.T) {
 			case "machine-link":
 				node.MachineName = "alias"
 
-				err = os.Symlink(directory, filepath.Join(node.StorePath, "machines", "alias"))
+				err = os.Symlink(directory, filepath.Join(node.StorePath, journalMachineDir, "alias"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -207,14 +225,14 @@ func TestJournalFilesystemBoundary(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "public-lock":
-				//nolint:gosec // G306: an empty public lock is the unsafe fixture being rejected.
-				err = os.WriteFile(filepath.Join(directory, "nutanix-operation.lock"), nil, 0o644)
+				// G306: an empty public lock is the unsafe fixture being rejected.
+				err = os.WriteFile(filepath.Join(directory, "nutanix-operation.lock"), nil, publicJournalFileMode)
 				if err != nil {
 					t.Fatal(err)
 				}
 			case "public-directory":
-				//nolint:gosec // G302: a writable temporary directory is the unsafe fixture being rejected.
-				err = os.Chmod(directory, 0o777)
+				// G302: a writable temporary directory is the unsafe fixture being rejected.
+				err = os.Chmod(directory, publicJournalDirectoryMode)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -233,7 +251,7 @@ func TestJournalFilesystemBoundary(t *testing.T) {
 func TestRemoveDurableIdentity(t *testing.T) {
 	t.Parallel()
 
-	for _, mode := range []string{"lost-create-response", "unknown-absent", "foreign-vm"} {
+	for _, mode := range []string{journalLostResponseMode, "unknown-absent", "foreign-vm"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			fixture := newDurableFixture(t, mode)
@@ -248,7 +266,7 @@ func TestRemoveDurableIdentity(t *testing.T) {
 			node.VMId = ""
 			for range 2 {
 				err := node.Remove()
-				if (err != nil) != (mode != "lost-create-response") {
+				if (err != nil) != (mode != journalLostResponseMode) {
 					t.Fatalf("Remove after failed Create: %v", err)
 				}
 			}
@@ -257,7 +275,7 @@ func TestRemoveDurableIdentity(t *testing.T) {
 			defer fixture.mu.Unlock()
 
 			wantDeletes := 0
-			if mode == "lost-create-response" {
+			if mode == journalLostResponseMode {
 				wantDeletes = 1
 			}
 
@@ -285,7 +303,7 @@ func TestRemoveLateCreate(t *testing.T) {
 		t.Fatal("unknown create absence was treated as terminal")
 	}
 
-	data, err := os.ReadFile(filepath.Join(node.StorePath, "machines", node.MachineName, "nutanix-create.json"))
+	data, err := os.ReadFile(filepath.Join(node.StorePath, journalMachineDir, node.MachineName, "nutanix-create.json"))
 	if err != nil || !strings.Contains(string(data), `"phase":"submitted"`) {
 		t.Fatalf("unknown operation journal was discarded: %v", err)
 	}
