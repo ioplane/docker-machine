@@ -1,0 +1,37 @@
+name: ioplane-nutanix-driver
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Containerfile.dev
+      target: dev
+    image: localhost/ioplane-nutanix-driver:dev
+    working_dir: /src
+    volumes:
+      - .:/src:z
+      - go-modules:/cache/modules
+      - go-build:/cache/build
+    environment:
+      GOFLAGS: -mod=readonly -buildvcs=false
+      GOTOOLCHAIN: local
+      CGO_ENABLED: "1"
+    profiles: [dev]
+    command: [bash]
+  lint:
+    build:
+      context: .
+      dockerfile: Containerfile.dev
+      target: lint
+    image: localhost/ioplane-nutanix-driver:lint
+    working_dir: /src
+    volumes:
+      - .:/src:z
+      - go-modules:/cache/modules
+      - go-build:/cache/build
+    profiles: [dev]
+    command: [golangci-lint, run, ./...]
+volumes:
+  go-modules:
+    name: ioplane-nutanix-driver-go-modules
+  go-build:
+    name: ioplane-nutanix-driver-go-build

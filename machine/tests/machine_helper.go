@@ -1,108 +1,135 @@
+// Package tests provides helpers for explicitly requested machine integration tests.
 package tests
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 )
 
-// const (
-// 	driver = "nutanix"
-// )
+const (
+	defaultMemoryMiB = 1024
+	defaultCPUCount  = 1
+)
 
-// MachineConfig structure
+// MachineConfig contains the machine integration-test configuration.
 type MachineConfig struct {
-	VMMem       int
-	VMCPUs      int
-	VMCores     int
 	MachineName string
-	VNICs       []string
-	VDisks      []string
 	SSHUser     string
 	SSHPass     string
 	NutanixUser string
 	NutanixPass string
 	Endpoint    string
+	VNICs       []string
+	VDisks      []string
+	VMMem       int
+	VMCPUs      int
+	VMCores     int
 }
 
-// CreateMachine test new machine creation
-func (c MachineConfig) CreateMachine() ([]byte, error) {
-	vmMem := c.VMMem
+// CreateMachine creates a machine without logging credential-bearing arguments.
+//
+//nolint:gocritic // Preserve the upstream public value-receiver method set.
+func (config MachineConfig) CreateMachine() ([]byte, error) {
+	vmMem := config.VMMem
 	if vmMem == 0 {
-		vmMem = 1024
+		vmMem = defaultMemoryMiB
 	}
-	vmCores := c.VMCores
+
+	vmCores := config.VMCores
 	if vmCores == 0 {
-		vmCores = 1
+		vmCores = defaultCPUCount
 	}
-	vmCPUs := c.VMCPUs
+
+	vmCPUs := config.VMCPUs
 	if vmCPUs == 0 {
-		vmCPUs = 1
+		vmCPUs = defaultCPUCount
 	}
-	args := []string{
+
+	const baseArgumentCount = 19
+
+	args := make([]string, 0,
+		baseArgumentCount+2*len(config.VNICs)+2*len(config.VDisks)+1)
+	args = append(args,
 		"create",
 		"-d",
 		"nutanix",
 		"--nutanix-username",
-		c.NutanixUser,
+		config.NutanixUser,
 		"--nutanix-password",
-		c.NutanixPass,
+		config.NutanixPass,
 		"--nutanix-endpoint",
-		c.Endpoint,
+		config.Endpoint,
 		"--nutanix-vm-mem",
-		fmt.Sprintf("%d", vmMem),
+		strconv.Itoa(vmMem),
 		"--nutanix-vm-cpus",
-		fmt.Sprintf("%d", vmCPUs),
+		strconv.Itoa(vmCPUs),
 		"--nutanix-vm-cores",
-		fmt.Sprintf("%d", vmCores),
+		strconv.Itoa(vmCores),
 		"--nutanix-vm-ssh-username",
-		c.SSHUser,
+		config.SSHUser,
 		"--nutanix-vm-ssh-password",
-		c.SSHPass,
-	}
+		config.SSHPass,
+	)
 
-	for _, nic := range c.VNICs {
+	for _, nic := range config.VNICs {
 		args = append(args, "--nutanix-vm-network-uuid", nic)
 	}
 
-	for _, disk := range c.VDisks {
+	for _, disk := range config.VDisks {
 		args = append(args, "--nutanix-vm-disk-uuid", disk)
 	}
 
-	args = append(args, c.MachineName)
+	args = append(args, config.MachineName)
 
-	cmd := exec.Command("docker-machine", args...)
-
-	fmt.Println(cmd.Args)
-
-	return cmd.CombinedOutput()
+	return runMachine(args)
 }
 
-// DeleteMachine test delete machine creation
-func (c MachineConfig) DeleteMachine() ([]byte, error) {
+// DeleteMachine removes the configured integration-test machine.
+//
+//nolint:gocritic // Preserve the upstream public value-receiver method set.
+func (config MachineConfig) DeleteMachine() ([]byte, error) {
 	args := []string{
 		"rm",
-		c.MachineName,
+		config.MachineName,
 	}
-	cmd := exec.Command("docker-machine", args...)
-	return cmd.CombinedOutput()
+
+	return runMachine(args)
 }
 
-// StartMachine test start machine
-func (c MachineConfig) StartMachine() ([]byte, error) {
+// StartMachine starts the configured integration-test machine.
+//
+//nolint:gocritic // Preserve the upstream public value-receiver method set.
+func (config MachineConfig) StartMachine() ([]byte, error) {
 	args := []string{
 		"start",
-		c.MachineName,
+		config.MachineName,
 	}
-	cmd := exec.Command("docker-machine", args...)
-	return cmd.CombinedOutput()
+
+	return runMachine(args)
 }
 
-// StopMachine test stop machine
-func (c MachineConfig) StopMachine() ([]byte, error) {
+// StopMachine stops the configured integration-test machine.
+//
+//nolint:gocritic // Preserve the upstream public value-receiver method set.
+func (config MachineConfig) StopMachine() ([]byte, error) {
 	args := []string{
 		"stop",
-		c.MachineName,
+		config.MachineName,
 	}
-	cmd := exec.Command("docker-machine", args...)
-	return cmd.CombinedOutput()
+
+	return runMachine(args)
+}
+
+func runMachine(arguments []string) ([]byte, error) {
+	//nolint:gosec // The fixed executable receives argv directly; no shell interprets them.
+	command := exec.CommandContext(context.Background(), "docker-machine", arguments...)
+
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return output, fmt.Errorf("run integration-test machine command: %w", err)
+	}
+
+	return output, nil
 }

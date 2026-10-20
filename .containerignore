@@ -1,0 +1,12 @@
+.git
+.github
+.worktrees
+.idea
+.vscode
+machine/vendor
+build
+dist
+**/*.log
+**/*.sarif
+README.md
+docs

@@ -1,5 +1,9 @@
 .idea/
 build/
+.worktrees/
+.beads/
+artifacts/
+coverage.out
 
 ### VisualStudioCode ###
 .vscode/*

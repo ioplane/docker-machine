@@ -1,17 +1,12 @@
 package utils
 
-import (
-	// "fmt"
-	// "strconv"
-	// "strings"
+import prism "github.com/nutanix-cloud-native/prism-go-client/v3"
 
-	v3 "github.com/nutanix-cloud-native/prism-go-client/v3"
-)
-
-// BuildReference create reference from defined object
-func BuildReference(uuid, kind string) *v3.Reference {
-	return &v3.Reference{
-		Kind: StringPtr(kind),
-		UUID: StringPtr(uuid),
+// BuildReference creates a reference to the defined object.
+func BuildReference(uuid, kind string) *prism.Reference {
+	return &prism.Reference{
+		Kind: new(kind),
+		UUID: new(uuid),
+		Name: nil,
 	}
 }
