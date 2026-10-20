@@ -128,17 +128,10 @@ func TestCreateSerialization(t *testing.T) {
 
 			close(start)
 
-			failures := 0
+			first, second := <-results, <-results
 
-			for range 2 {
-				err := <-results
-				if err != nil {
-					failures++
-				}
-			}
-
-			if failures != 1 {
-				t.Fatalf("concurrent Create results: failures=%d, want one lost response and one recovery", failures)
+			if (first == nil) == (second == nil) {
+				t.Fatal("concurrent Create results: want one lost response and one recovery")
 			}
 
 			fixture.mu.Lock()
