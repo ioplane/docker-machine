@@ -1,15 +1,15 @@
-FROM docker.io/library/golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS dev
+FROM docker.io/library/golang:1.27.3-trixie@sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c AS dev
 ARG SOURCE_REVISION=33d066f7174aea9d33a59642b12394dc0c890930
 ARG BUILD_CREATED=2026-10-15T00:00:00Z
 LABEL org.opencontainers.image.title="Nutanix Rancher driver development" \
       org.opencontainers.image.description="Pinned Go toolchain for local and CI checks" \
       org.opencontainers.image.source="https://github.com/ioplane/docker-machine" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
-      org.opencontainers.image.version="go1.27.2" \
+      org.opencontainers.image.version="go1.27.3" \
       org.opencontainers.image.created="${BUILD_CREATED}" \
       org.opencontainers.image.licenses="MPL-2.0" \
-      org.opencontainers.image.base.name="docker.io/library/golang:1.27.2-trixie" \
-      org.opencontainers.image.base.digest="sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e"
+      org.opencontainers.image.base.name="docker.io/library/golang:1.27.3-trixie" \
+      org.opencontainers.image.base.digest="sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c"
 ENV GOFLAGS="-mod=readonly -buildvcs=false" GOTOOLCHAIN=local GOENV=off \
     GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org \
     GOCACHE=/cache/build GOMODCACHE=/cache/modules CGO_ENABLED=1
