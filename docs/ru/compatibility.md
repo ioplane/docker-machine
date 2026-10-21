@@ -110,7 +110,7 @@ Context7 использован для маршрутизации и общег�
 
 ## Проверки и оставшиеся границы
 
-Go: language floor `1.27.0`, toolchain `go1.27.2`. Golangci-lint `2.14.0`:
+Go: language floor `1.27.0`, toolchain `go1.27.3`. Golangci-lint `2.14.0`:
 `default: all`, 112 включённых линтеров, три отключённых устаревших предшественника.
 `gocritic`, `govet`, `staticcheck` и правила `revive` включены полностью; исключения
 для optional SDK fields, прежнего JSON API, public package name и декларативной

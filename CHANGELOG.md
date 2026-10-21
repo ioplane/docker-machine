@@ -47,6 +47,8 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- Development and release compiler pins use Go 1.27.3 to distrust compromised intermediate certificates (GO-2026-6809 / CVE-2026-111943); the Go 1.27.0 language floor, module dependencies and driver RPC/state contracts are unchanged.
+
 - API response diagnostics no longer echo server payloads, messages, details or arbitrary HTTP status text, while preserving cancellation and JSON causes through errors.Is/As.
 
 ### Fixed

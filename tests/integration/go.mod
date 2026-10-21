@@ -2,7 +2,7 @@ module github.com/nutanix/docker-machine/tests/integration
 
 go 1.27.0
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/nutanix/docker-machine v0.0.0
